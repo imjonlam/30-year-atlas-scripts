@@ -1,0 +1,105 @@
+'14-APR-2011, Steve McCourt'
+'  -finalized linear interpolation script
+'    -this will linearly interpolate a product between 2 dates
+'    -it contains some reasonable tweaks but it's more than
+'     likely that products will need some patching 
+'    -be sure to read the boilerplate on the MAIN script
+'     to understand just what is taking place
+'
+'07-MAR-2011, Steve McCourt
+'  -GL breakup (2 week) was missing the 0226 date in the 
+'   script Manual.CreateFreezeupBreakupGrid
+'  -fixed
+'
+'01-DEC-2010, Steve McCourt
+'  -finally updating CIS.ALL.AddPredomToFtab to incorporate fast ice
+'   typing information that is stored in the EGG_ATTR column
+'
+'05-NOV-2010, Steve McCourt
+'  -finally fixed incorrect reporting of input / missing / substitute charts
+'   in the cisstats_*.txt logfile
+'
+'03-NOV-2010, Steve McCourt
+'  -logic for patching fast ice AFTER the product was created was not
+'   good, instead, we patch each input grid BEFORE processing
+'  -this still permits users to opt to not to patch the fast ice as well
+'  -updated some code in the CIS.CUSTOM.STATS.Main as well.
+'  -somewhat unrelated but noteworthy... we moved all the climate data
+'   from \\cisarchive\climate to \\netapp2\climate today as well
+'
+'20-OCT-2010, Steve McCourt
+'  -changed "Eastern Coast/Cote est" in number of observations to read
+'   "East Coast/Cote est"
+'  -updated Great Lakes land datasets (was very old and missing islands)
+'  -verified once again the re-assignment of ratio code first-year and
+'   very-thick lake ice, it's okay
+'  -I updated an ancient script to create the freeze-up and break-up data
+'   its a standalone and is named "Manual.CreateFreezeupBreakupGrid"
+'
+'10-AUG-2010, Steve McCourt
+'  -frequency of old ice for EC was a trace to 10/10 in old
+'   atlas but this is not accurate
+'  -it's set to 1 to 10/10 now in CIS.STATS.Main (CUSTOM too)
+'  -there is logic code in CIS.STATS.Main (CUSTOM too) to permit 
+'   changing from 1 to 0.3 (trace) if you feel like changing it
+'
+'20-JUL-2010, Steve McCourt
+'  -code where the input list of charts is created was not working
+'   properly
+'     -if 1 substitute chart was designated more than once, it 
+'      would only be included once in the list
+'     -code entirely re-written and pulled out into separate script
+'      called "CIS.ALL.GetListOfChartsToProcess"
+'     -CIS.ALL.ImportCov was also updated to accomodate these changes,
+'        -all changes here are backward compatitble if an older script
+'         tries to use it
+'     -a little more robust and clear now that all that code is pulled
+'      out of the CIS.STATS.Main / CIS.CUSTOM.Main scripts
+'  -added some functionality to deal with mixes of ratio and egg code
+'     -user will be prompted if less than 7% (2 of 30) are ratio code
+'      based charts and asks how they would like to handle FY code 6
+'     -similar functionality for GL very thick and thick lake ice
+'     -added some logging info regarding this as well
+'
+'07-JUL-2010, Steve McCourt
+'  -final cleanup 
+'    DONE-update all map templates
+'      DONE-remove copyright symbol
+'      DONE-change new predom legend to 1ere instead premiere
+'    DONE-update exportmaporlayout
+'      -use alchemy and PS instead of BMP method
+'    DONE-review all shapefile paths and ensure they use the
+'     \bnd\ or \land\ or etc.
+'    DONE-update attribute dictionary for predom legend
+'    DONE-review all global variables since names changed over the years
+'    DONE-no data area over Bay of Fundy
+'    -fast ice adjusting using Lionel's info
+'
+'21-APR-2010, Steve McCourt
+'  -begin adding new functionality
+'    -DONE median of ice concentration when ice is present
+'    -DONE average of ice concentration
+'    -fast ice typing
+'       -need to compile that script, MAIN, USERINPUT for both
+'        normal and custom
+'    -statistical minimum ice concentration???
+'    -statistical maximum ice concentration???
+'  -TO DO
+'    -add conc threshold to median script
+'    -see to do list for predom
+'    -above products
+
+'15-FEB-2010, Steve McCourt
+'  -modified CIS.STATS.PredomWhenIcePresent to not group 
+'   FY ice categories but to maintain thin, medium, thick
+'  -this is for a custom CCG data request
+'  -fixed problem when "L" instead of "L." was encountered
+'   in CIS.ALL.AddPredomToFTab
+
+'30-MAY-2008, Steve McCourt
+'  -chagned historic date of 0604 to be used
+'  -record in:
+'  
+'  \\cisarchive\climate\Climate_Program_Support\Tables\hist_date_lut.dbf
+'  
+'  was modified

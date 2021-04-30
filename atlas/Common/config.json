@@ -1,0 +1,156 @@
+{
+  "purpose": "config file for QGIS atlas chart creation",
+  
+  "logfile": "AtlasChart_{}_{}.log",
+  "logdir": [ "c:\\", "cis", "user_data", "{0}", "logs" ],
+  "tmpdir": ["c:\\", "cis", "user_data", "{0}", "temp"],
+  "projectid": 1332,
+  
+  "projections": {
+    "AR": -100,
+    "EA": -70,
+    "WA": -86,
+    "HB": -59,
+    "GL": -83.5,
+    "EC": -60
+  },
+
+  "wkt": ["Data", "wgs_1984_lambert_conformal_conic.wkt"],
+
+  "filenames": {
+    "ctmed": "{}_ctmed{}.png", 
+    "cpmed": "{}_cpmed{}.png",
+    "oimed": "{}_oimed{}.png",
+    "prmed": "{}_prmed{}.png",
+    "icfrq": "{}_icfrq{}.png",
+    "oifrq": "{}_o{}frq{}.png",
+    "breakup": "{}_breakup_2_week.png",
+    "ctfup": "{}_freezeup_2_week.png",
+    "fifrq": "{}_fifrq{}.png",
+    "fifup": "{}_fifreezeup_2_week.png",
+    "airss": "{}_medairss{}.png",
+    "mpi": "{}_mpi{}.png"
+  },
+
+  "special_dates": {
+    "0101": "0101",
+    "0129": "0201",
+    "0226": "0301",
+    "0402": "0401",
+    "0430": "0501",
+    "0514": "0515"
+  },
+  
+  "translation": {
+    "JAN": "JAN",
+    "FEB": "FÉV",
+    "MAR": "MARS",
+    "APR": "AVR",
+    "MAY": "MAI",
+    "JUN": "JUIN",
+    "JUL": "JUIL",
+    "AUG": "AOÛT",
+    "SEP": "SEP",
+    "OCT": "OCT",
+    "NOV": "NOV",
+    "DEC": "DÉC"
+  },
+
+  "analogue": {
+    "0101": {"EA": 2, "WA": 2, "HB": 2, "EC": 0, "GL": 1},
+    "0201": {"EA": 0, "WA": 1, "HB": 0, "EC": 0, "GL": 0},
+    "0301": {"EA": 1, "WA": 1, "HB": 1, "EC": 0, "GL": 0},
+    "0507": {"EA": 0, "WA": 0, "HB": 0, "EC": 0, "GL": 1},
+    "0515": {"EA": 6, "WA": 6, "HB": 6, "EC": 0, "GL": 0},
+    "0604": {"EA": 0, "WA": 0, "HB": 0, "EC": 0, "GL": 0},
+    "0611": {"EA": 7, "WA": 6, "HB": 4, "EC": 0, "GL": 0},
+    "0625": {"EA": 0, "WA": 0, "HB": 0, "EC": 2, "GL": 0},
+    "0702": {"EA": 0, "WA": 0, "HB": 0, "EC": 2, "GL": 0},
+    "0709": {"EA": 0, "WA": 0, "HB": 0, "EC": 1, "GL": 0},
+    "0813": {"EA": 0, "WA": 0, "HB": 0, "EC": 1, "GL": 0},
+    "0820": {"EA": 0, "WA": 0, "HB": 0, "EC": 1, "GL": 0},
+    "1112": {"EA": 0, "WA": 0, "HB": 0, "EC": 0, "GL": 1},
+    "1119": {"EA": 0, "WA": 0, "HB": 0, "EC": 1, "GL": 2},
+    "1126": {"EA": 3, "WA": 3, "HB": 2, "EC": 11, "GL": 12},
+    "1204": {"EA": 3, "WA": 3, "HB": 1, "EC": 4, "GL": 4},
+    "1211": {"EA": 0, "WA": 0, "HB": 0, "EC": 2, "GL": 3},
+    "1218": {"EA": 0, "WA": 0, "HB": 0, "EC": 0, "GL": 2},
+    "1225": {"EA": 0, "WA": 0, "HB": 0, "EC": 0, "GL": 1},
+    "default": {"EA": 0, "WA": 0, "HB": 0, "EC": 0, "GL": 0}
+  },
+
+  "templates": {
+    "ctmed": ["Data", "templates", "ctmed", "{}_ctmed.qpt"],
+    "cpmed": ["Data", "templates", "cpmed", "{}_cpmed.qpt"],
+    "oimed": ["Data", "templates", "oimed", "{}_oimed.qpt"],
+    "prmed": ["Data", "templates", "prmed", "{}_prmed.qpt"],
+    "icfrq": ["Data", "templates", "icfrq", "{}_icfrq.qpt"],
+    "oifrq": ["Data", "templates", "oifrq", "{}_oifrq.qpt"],
+    "ctfup": ["Data", "templates", "ctfup", "{}_ctfup.qpt"],
+    "breakup": ["Data", "templates", "breakup", "{}_breakup.qpt"],
+    "fifrq": ["Data", "templates", "fifrq", "{}_fifrq.qpt"],
+    "fifup": ["Data", "templates", "fifup", "{}_fifup.qpt"],
+    "airss": ["Data", "templates", "medairss", "{}_medairss.qpt"],
+    "mpi": ["Data", "templates", "mpi", "{}_mpi.qpt"]
+  },
+  
+  "land": ["Data", "coastline", "union_landmask.shp"],
+  "land_style": ["Data", "styles", "land.qml"],
+
+  "latlong_major": ["Data", "latlong", "lat_long_5deg_arc.shp"],
+  "latlong_minor": ["Data", "latlong", "lat_long_arc.shp"],
+  "latlong_style": {
+    "AR": ["Data", "styles", "latlong_arctic.qml"],
+    "EA": ["Data", "styles", "latlong_arctic.qml"],
+    "WA": ["Data", "styles", "latlong_arctic.qml"],
+    "HB": ["Data", "styles", "latlong_arctic.qml"],
+    "GL": ["Data", "styles", "latlong_other.qml"],
+    "EC": ["Data", "styles", "latlong_other.qml"]
+  },
+
+  "raster_style": {
+    "ctmed": ["Data", "styles", "raster", "ctmed.qml"],
+    "cpmed": ["Data", "styles", "raster", "ctmed.qml"],
+    "oimed": ["Data", "styles", "raster", "ctmed.qml"],
+    "prmed": ["Data", "styles", "raster", "prmed.qml"],
+    "icfrq": ["Data", "styles", "raster", "icfrq.qml"],
+    "oifrq": ["Data", "styles", "raster", "oifrq.qml"],
+    "ctfup": ["Data", "styles", "raster", "{}_ctfup.qml"],
+    "breakup": ["Data", "styles", "raster", "{}_breakup.qml"],
+    "fifup": ["Data", "styles", "raster", "{}_ctfup.qml"]
+  },
+  
+  "vector_style": {
+    "ctmed": ["Data", "styles", "vector", "ctmed.qml"],
+    "cpmed": ["Data", "styles", "vector", "cpmed.qml"],
+    "oimed": ["Data", "styles", "vector", "oimed.qml"],
+    "prmed": ["Data", "styles", "vector", "prmed.qml"],
+    "icfrq": ["Data", "styles", "vector", "icfrq.qml"],
+    "fifrq": ["Data", "styles", "vector", "fifrq.qml"],
+    "oifrq": ["Data", "styles", "vector", "o{}frq.qml"],
+    "ctfup": ["Data", "styles", "vector", "{}_ctfup.qml"],
+    "breakup": ["Data", "styles", "vector", "{}_breakup.qml"],
+    "fifup": ["Data", "styles", "vector", "{}_fifup.qml"],
+    "airss": ["Data", "styles", "vector", "medairss.qml"],
+    "mpi": ["Data", "styles", "vector", "mpi.qml"]
+  },
+  
+  "legend" : ["Data", "legend.tif"],
+  "legend_style": {
+    "ctmed": ["Data", "styles", "legend", "{}", "ctmed.qml"],
+    "cpmed": ["Data", "styles", "legend", "{}", "ctmed.qml"],
+    "oimed": ["Data", "styles", "legend", "{}", "ctmed.qml"],
+    "prmed": ["Data", "styles", "legend", "{}", "{}_prmed.qml"],
+    "icfrq": ["Data", "styles", "legend", "{}", "icfrq.qml"],
+    "oifrq": ["Data", "styles", "legend", "{}", "freq.qml"],
+    "ctfup": ["Data", "styles", "legend", "{}", "{}_ctfup.qml"],
+    "breakup": ["Data", "styles", "legend", "{}", "{}_breakup.qml"],
+    "fifrq": ["Data", "styles", "legend", "{}", "freq.qml"],
+    "fifup": ["Data", "styles", "legend", "{}", "{}_fifup.qml"],
+    "airss": ["Data", "styles", "legend", "{}", "medairss.qml"],
+    "mpi": ["Data", "styles", "legend", "{}", "{}_prmed.qml"]
+  },
+
+  "canada": ["Data","graphics","canada_wordmark.jpg"],
+  "environmentcanada": ["Data","graphics","environment_canada.png"]
+}

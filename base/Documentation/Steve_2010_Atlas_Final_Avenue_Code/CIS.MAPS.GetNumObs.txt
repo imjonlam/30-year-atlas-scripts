@@ -1,0 +1,102 @@
+'==========================================================
+'Script Name: CIS.MAPS.GetNumObs
+'
+'Purpose: This has been written with primarily the EC/GL in
+'         mind - we check the number of missing charts
+'         instead of counting the number of charts - this 
+'         allows us to catch all the ice free charts that
+'         have never been produced.  It is expected that any
+'         calling script can get the max. possible number of
+'         obs by calculating from a startYear and an endYear.
+'
+'         This will also correct any Arctic winter values by
+'         setting them to 1980 if the startYear is less than
+'         1980 - otherwise, the number of observations would
+'         be way too high since they are not logged in the
+'         missing_charts.dbf.
+'         
+'Files Required: _cisDBDir\missing_charts.dbf
+'
+'Scripts Required: None
+'
+'Global Variables: _cisDBDir
+'
+'Original Author: Steve McCourt (CIS)
+'
+'Original Script Date: 25-AUG-2003
+'
+'Objects Received: the STRING object theRegion
+'                  the STRING object histDate
+'                  the NUMBER object startYear
+'                  the NUMBER object endYear
+'
+'Objects Returned: the LIST object numObsList
+'                                       
+'Modifications/Date/Author: 
+'==========================================================
+
+regionList = Self.Get(0)
+histDate = Self.Get(1)
+startYear = Self.Get(2)
+endYear = Self.Get(3)
+
+maxObs = (endYear - startYear) + 1
+numobsList = {}
+
+missingvtabFN = (_cisDBDir+"\missing_charts.dbf").AsFileName
+missingVTab = VTab.Make(missingvtabFN, False, False)
+
+for each theRegion in regionList
+  theRegion = theRegion.UCase
+  reallymissingCharts = 0
+
+  '========================================================
+  'now check for any substitute charts in missingVTab
+  '========================================================
+  
+  qryStr = "((([Rg] = "+theRegion.Quote+") and ([Hist_date] ="++
+    histDate.Quote+")) and (([Miss_year] >= "+startYear.AsString+")"++
+    "and ([Miss_year] <= "+endYear.AsString+")))"
+  missingBitmap = missingVTab.GetSelection
+  missingVTab.Query(qryStr, missingBitmap, #VTAB_SELTYPE_NEW)
+    
+  subchartFld = missingVTab.FindField("Sub_chart")
+  
+  for each bit in missingBitmap
+    subchartVal = (missingVTab.ReturnValue(subchartFld, bit)).Trim
+    if(subchartVal.IsNull) then
+      reallymissingCharts = reallymissingCharts + 1
+    end
+  end
+
+  '========================================================
+  'we need to be ensure that user's don't send us info and forget
+  'that for the EA/WA/HB that winter charts begin in 1980, so if
+  'the historic date is that, then fix it for them
+  '========================================================
+  
+  newMaxObs = maxObs
+  
+  if((theRegion = "EA") or (theRegion = "WA") or (theRegion = "HB")) then
+    if((histDate.AsNumber < 611) or (histDate.AsNumber > 1204)) then
+      if(startYear < 1980) then
+        newMaxObs = (endYear - 1980) + 1
+      end
+    end
+  end
+
+  '========================================================
+  'now we need to be careful with GL/EC because if there's no
+  'ice, then no chart was produced, so we now subtract the 
+  'number of reallymissingCharts from the maxObs value
+  '========================================================
+  
+  numObs = newMaxObs - reallymissingCharts
+  numObsList.Add(numObs)
+end
+
+missingVTab.Deactivate
+missingVTab = nil
+
+return numObsList
+

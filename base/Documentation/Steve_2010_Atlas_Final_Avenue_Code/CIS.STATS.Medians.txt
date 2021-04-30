@@ -1,0 +1,421 @@
+'==========================================================
+'Script Name: CIS.STATS.Medians
+'
+'Purpose: This will calculate any type of median concentration 
+'         required at CIS.  It receives a list of ftabs
+'         then allows for a concentration threshold to
+'         be used for products like old ice >= 4/10.
+'
+'         Assumes all input data are LCC100 projection.
+'
+'Files Required: none
+'
+'Scripts Required: none
+'
+'Global Variables: _cisRefDir
+'
+'Original Author: Steve McCourt (CIS)
+'
+'Original Script Date: 04-MAR-2003
+'
+'Objects Received: the LIST object ftabsrcnameList
+'                  the NUMBER object outcellSize
+'                  the STRING object theRegion
+'                  the NUMBER object concThreshold
+'                  the STRING object theStat
+'                     -one of ctmed,oi,fy,gw,gr,nw,
+'                      tk,md,tn
+'
+'Objects Returned: None
+'                                       
+'Modifications/Date/Author: 21-APR-2010, Steve McCourt
+'                             -adding some details to 
+'                              boilerplate
+'==========================================================
+
+ftabsrcnameList = Self.Get(0)
+outcellSize = Self.Get(1)
+theRegion = (Self.Get(2)).LCase
+theStat = (Self.Get(3)).LCase
+outFileName = Self.Get(4)
+
+if(outFileName.Is(String)) then
+  outFileName = outFileName.AsFileName
+elseif(outFileName.Is(SrcName)) then
+  outFileName = outFileName.AsString.AsFileName
+end
+
+Grid.SetAnalysisCellSize(#GRID_ENVTYPE_VALUE, outcellSize)
+
+'==========================================================
+'now set the analysis extent for our grids
+'==========================================================
+
+bndSrcName = SrcName.Make(_cisRefDir+"\shapefiles\bnds\"+theRegion+
+  "_atlas_lcc100"+".shp")  
+
+'==========================================================
+'just in case there is more than one shape in the bnd,
+'union all the shapes
+'==========================================================
+
+bndFTab = FTab.Make(bndSrcName)
+bndshpFld = bndFTab.FindField("Shape")
+
+totShp = bndFTab.ReturnValue(bndshpFld, 0)
+
+if(bndFTab.GetNumRecords > 1) then
+  for each rec in 1..(bndFTab.GetNumRecords - 1)
+    shp = bndFTab.ReturnValue(bndshpFld, rec)
+    totShp = totShp.ReturnUnion(shp)
+  end
+end
+
+bndFTab.Deactivate
+bndFTab = nil
+
+totshpExtent = totShp.ReturnExtent
+llx = (((totshpExtent.GetLeft) / outcellSize).Round) * outcellSize
+lly = (((totshpExtent.GetBottom) / outcellSize).Round) * outcellSize
+urx = (((totshpExtent.GetRight) / outcellSize).Round) * outcellSize
+ury = (((totshpExtent.GetTop) / outcellSize).Round) * outcellsize
+
+Grid.SetAnalysisExtent(#GRID_ENVTYPE_VALUE, Rect.MakeXY(llx,lly,urx,ury))
+
+ftabList = {}
+
+for each asrcname in ftabsrcnameList
+  theFTab = FTab.Make(asrcname)
+  ftabList.Add(theFTab)
+  theFTab.Deactivate
+end  
+
+'==========================================================
+'when medians area calculated using ArcView's default 
+'settings, there is a minor glitch in that if an even-numbered
+'set of inputs is used, the average between the middle values
+'is calculated which is inaccurate esp. at the fast ice/open
+'water edge... so we fool it by inserting a bogus 900 layer
+'which forces ArcView to pick the higher of the two middle
+'values
+'==========================================================
+
+remainder = (ftabList.Count).Mod(2)
+
+if(remainder = 0) then
+  add900layer = True
+else
+  add900Layer = False
+end
+
+av.PurgeObjects
+
+if(theStat = "ctmed") then
+  fldName = "N_ct"
+elseif(theStat.Contains("oi")) then
+  fldName = "N_coi"
+elseif(theStat.Contains("fy")) then
+  fldName = "N_cfy"
+elseif(theStat.Contains("gw")) then
+  fldName = "N_cgw"
+elseif(theStat.Contains("gr")) then
+  fldName = "N_cyi"
+elseif(theStat.Contains("nw")) then
+  fldName = "N_cn"
+elseif(theStat.Contains("tk")) then
+  fldName = "N_ctk"
+elseif(theStat.Contains("md")) then
+  fldName = "N_cm"
+elseif(theStat.Contains("tn")) then
+  fldName = "N_ctn"
+end
+
+'==========================================================
+'we need our pre-defined bnds to ensure a consistent
+'AOI, so define it now
+'==========================================================
+
+lcc100bndSrcName = SrcName.Make(_cisRefDir+"\shapefiles\bnds\"+theRegion+
+  "_atlas_lcc100.shp")
+lcc100bndFTab = FTab.Make(lcc100bndSrcName)
+
+firstTime = True
+gridList = {}
+
+for each theftab in ftabList
+
+  '========================================================
+  'add a temporary field for our median called 
+  '"Conc" 0 is no concentration, 1 through 9 is 1 to 9/10,
+  '10 is 9+/10, 11 is 10/10, 123 is nodata, and 900 is land
+  '========================================================
+
+  newFld = theftab.FindField("Conc")
+  if(newFld = nil) then
+    newFld = Field.Make("Conc", #FIELD_DECIMAL, 3, 0)
+    theftab.SetEditable(True)
+    theftab.AddFields({newFld})
+    newFld = theftab.FindField("Conc")
+    nctFld = theFTab.FindField("N_ct")
+    concFld = theftab.FindField(fldName)
+    pnttypeFld = theftab.FindField("Pnt_type")
+    for each rec in theftab
+      concVal = (theftab.ReturnValue(concFld, rec)).Trim  
+      nctVal = (theFTab.ReturnValue(nctFld, rec)).Trim    
+      pnttypeVal = theftab.ReturnValue(pnttypeFld, rec)
+
+      '====================================================      
+      'check nodata/bergy/openwater/icefree/land first then 
+      'skip the rest if necessary (fast ice will be caught
+      'in the next part
+      '====================================================      
+      
+      if((pnttypeVal = 123) or (pnttypeVal = 128) or 
+         (pnttypeVal = 133)) then
+        theFTab.SetValue(newFld, rec, 123)
+        continue
+      elseif((pnttypeVal = 400) or (pnttypeVal = 900)) then
+        theFTab.SetValue(newFld, rec, 900)
+        continue
+      elseif((pnttypeVal = 101) or (pnttypeVal = 107) or
+             (pnttypeVal = 115)) then
+        theFTab.SetValue(newFld, rec, 0)
+        continue
+      end      
+      
+      if(concVal.IsNull) then
+        concVal = 0.0
+      else
+        concVal = concVal.AsNumber.SetFormat("d.d")
+      end   
+      
+      if(nctVal.IsNull) then
+        nctVal = 0.0
+      else
+        nctVal = nctVal.AsNumber.SetFormat("d.d")
+      end
+       
+      '====================================================      
+      'great lakes we must add N_cvtk and N_ctk for 
+      'frequency of thick ice - very thick lake ice only
+      'started in 1982
+      'for all other regions, we must subtract N_cgw from
+      'N_cyi
+      '====================================================      
+      
+      if((theRegion = "gl") and (theStat = "tkfrq")) then
+        nctvkVal = (theftab.ReturnValue(theftab.FindField("N_cvtk"),
+          rec)).Trim.AsNumber.SetFormat("d.d")
+        if(nctvkVal.IsNull) then
+          nctvkVal = 0.0
+        end
+        concVal = concVal + nctvkVal.SetFormat("d.d")
+      elseif((theRegion <> "gl") and (theStat = "grfrq")) then
+        ncgwVal = (theftab.ReturnValue(theftab.FindField("N_cgw"),
+          rec)).Trim.AsNumber.SetFormat("d.")
+        if(ncgwVal.IsNull) then
+          ncgwVal = 0.0
+        end
+        concVal = concVal - ncgwVal.SetFormat("d.d")
+      end
+
+      '====================================================      
+      'ensure we don't have more than nctVal
+      '====================================================      
+      
+      if(concVal > nctVal) then
+        concVal = nctVal
+      end
+
+      '====================================================      
+      'now set the numbers we use for calculating integer
+      'medians and truncate them (getting rid of traces)
+      '====================================================      
+      
+      if(concVal = 9.7) then
+        concVal = 10
+      elseif(concVal = 10) then
+        concVal = 11
+      else
+        concVal = concVal.Truncate
+      end    
+      
+      theFTab.SetValue(newFld, rec, concVal)
+    end
+    theftab.SetEditable(False)
+  end
+
+  '========================================================      
+  'since regional extents vary over time, we expand the
+  'analysis extent by 200km (200,000m) to capture all
+  'input data and get rid of any no data issues that
+  'negate any processing within them
+  '========================================================      
+  
+  gridExtent = ((FTheme.Make(theftab)).ReturnExtent).ExpandBy(200000)
+
+  '========================================================      
+  'now ensure that all grid origins begin at a multiple
+  'of the cellsize, otherwise, cells can be misaligned
+  '========================================================      
+  
+  llx = gridExtent.GetLeft
+  lly = gridExtent.GetBottom
+  
+  llx = ((llx / outcellSize).Floor) * outcellSize
+  lly = ((lly / outcellSize).Floor) * outcellSize
+  
+  gridExtent.SetOrigin(llx@lly)  
+  gridParams = {outcellSize, gridExtent}   
+  
+  g1 = Grid.MakeFromFTab(theftab, Prj.MakeNull, newFld, 
+        gridParams)
+        
+  '========================================================      
+  'NOTE: all buildSTA and purgeObjects requests are
+  'done to ensure memory is cleaned up and temp grids
+  'are written to disk instead of in memory
+  '========================================================         
+  
+  g1.BuildSTA
+        
+  '========================================================      
+  'avoid altering the input ftabs (remove the new fields)
+  '========================================================      
+         
+  theftab.SetEditable(True)
+  theftab.RemoveFields({newfld})
+  theftab.SetEditable(False)
+  
+  '========================================================      
+  'for the east coast, we need to add a zero layer because
+  'if the extent isn't full (1968/69 to 1997/98) then ice
+  'beyond the extent will be forced to nodata this is
+  'different than the nodata patch below because we know 
+  'everything beyond the chart extent is no ice
+  '========================================================      
+
+  if(theRegion = "ec") then
+    bndSrcName = SrcName.Make(_cisRefDir+"\shapefiles\bnds\ec_atlas_lcc100.shp")
+    bndFTab = FTab.Make(bndSrcName)
+    tmpFld = bndFTab.FindField("Tmp")
+    if(tmpFld = nil) then        
+      tmpFld = Field.Make("Tmp", #FIELD_DECIMAL, 1, 0)
+      bndFTab.SetEditable(True)      
+      bndFTab.AddFields({tmpFld})
+      saveEdits = True
+      bndFTab.SetEditable(False)
+      tmpFld = bndFTab.FindField("Tmp")
+    end      
+   
+    '======================================================      
+    'again, ensure constant grid extents/origins
+    '======================================================      
+    
+    gridExtent = ((FTheme.Make(bndFTab)).ReturnExtent).ExpandBy(200000)
+    
+    llx = gridExtent.GetLeft
+    lly = gridExtent.GetBottom
+    
+    llx = ((llx / outcellSize).Floor) * outcellSize
+    lly = ((lly / outcellSize).Floor) * outcellSize
+    
+    gridExtent.SetOrigin(llx@lly)  
+    gridParams = {outcellSize, gridExtent} 
+    zerogrid = Grid.MakeFromFTab(bndFTab, Prj.MakeNull, tmpFld,
+      gridParams)
+    g2 = g1.Merge({zerogrid})
+    bndFTab.SetEditable(True)
+    bndFTab.RemoveFields({tmpFld})
+    saveEdits = True
+    bndFTab.SetEditable(False)
+    bndFTab.Deactivate
+    g1 = nil
+    g1 = g2
+    g1.BuildSTA
+    av.PurgeObjects
+  end  
+
+  '========================================================      
+  'now we need to be careful because charts can have no 
+  'data holes in them (Arctic for example), so to alleviate 
+  'this we will merge the entire grid with a 123 layer - 
+  'this also fixes the the no processing in nodata areas and 
+  'allows us to have real frequencies based on the number 
+  'of real observations
+  '
+  'no data is 123
+  '========================================================      
+  
+  g2 = (g1.IsNull).Con(123.AsGrid, g1)  
+  g2.BuildSTA      
+
+  if(firstTime) then
+  
+    '======================================================      
+    'create the 900grid if applicable
+    '====================================================== 
+    
+    if(add900layer) then
+     
+      dummyGrid = (g2 < 9000).Con(900.AsGrid, 900.AsGrid)
+      'dummyGrid = 900.AsGrid
+      dummyGrid.BuildSTA
+      firstTime = False
+      gridList.Add(dummyGrid)
+    end
+  end
+  
+  gridList.Add(g2)
+  g1 = nil
+  g2 = nil
+  theftab.Deactivate
+  av.PurgeObjects
+end
+
+'==========================================================      
+'now calculate the median
+'==========================================================      
+  
+g3 = gridList.Get(0)
+gridList.Remove(0)
+
+g4 = g3.LocalStats(#GRID_STATYPE_MEDIAN, gridList)
+g4.BuildSTA
+
+'==========================================================
+'finally clip the grid to it's pre-defined extent
+'==========================================================
+
+outcentmer = -100
+tmpFileName = outFileName.ReturnDir
+
+g4FileName = (tmpFileName.AsString+"\g4").AsFileName
+g4.SaveDataSet(g4FileName)
+medgridFileName = (tmpFileName.AsString+"\medgrid").AsFileName
+
+doISIS = False
+
+av.Run("CIS.ALL.ClipClimateGrid", {theRegion, 
+  g4FileName.AsString, outcentMer, medgridFileName, doISIS})
+  
+medGrid = Grid.Make(Grid.MakeSrcName(medgridFileName.AsString))
+medGrid.BuildSTA
+medGrid.SaveDataSet(outFileName)
+
+'==========================================================
+'now cleanup
+'==========================================================
+
+medGrid = nil
+g3 = nil
+g4 = nil
+g5 = nil
+medGrid = nil
+av.PurgeObjects
+
+Grid.DeleteDataSet(g4FileName)
+Grid.DeleteDataSet(medGridFileName)
+
+
+

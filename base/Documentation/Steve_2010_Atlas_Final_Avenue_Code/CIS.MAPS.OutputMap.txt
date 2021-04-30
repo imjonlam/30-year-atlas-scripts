@@ -1,0 +1,774 @@
+'==========================================================
+'Script Name: CIS.MAPS.OutputMap
+'
+'Purpose: Creates an output file (JPG/GIF/PS) or prints a
+'         specified view.  This requires numberous templates
+'         found in _cistmpDir\template.def.
+'
+'         Requires a lot of arguments.
+'         
+'Files Required: _cisDBDir\maps_lut.dbf
+'                _cisRefDir\graphics\logos*.* - logo files
+'                _cisTmpDir\template.def
+'
+'Scripts Required: CIS.ExportOrPrintLayout
+'                  CIS.SetText
+'                  CIS.AddLogos
+'
+'Global Variables: _cisDBDir
+'
+'Original Author: Steve McCourt (CIS)
+'
+'Original Script Date: 23-AUG-2003
+'
+'Objects Received: the STRING object theRegion (AR, WA, EA,
+'                    HB, EC, GL)
+'                  the STRING object statType (CTMED, OIMED, 
+'                    PRMED, OIFRQ, O4FRQ, FYFRQ, YNFRQ, NWFRQ,
+'                    ICFRQ, TKFRQ, MDFRQ, TNFRQ)
+'                  the STRING object mapType (ISIS, CLIM)
+'                  the NUMBER object offsetSize (value to offset 
+'                    the page - atlas production)
+'                  the STRING object pageSize (8.5x11, 9x12)
+'                  the BOOLEAN object addLogos
+'                  the STRING object outFormat (JPG, GIF, PRINT,
+'                    PS)
+'                  the STRING object dateStr (a historic
+'                    date (mmdd) or yyyymmdd)
+'                  the STRING object dateText (what will appear
+'                    in the date box)
+'                  the STRING object numosbsText (what will 
+'                    appear in number of years box, if no box,
+'                    then simply leave this as a null string "")
+'                  the STRING object outDir (where to output
+'                    files)
+'                  the VIEW object theView (view to export)
+'                  the STRING object pagenumberStr (value
+'                    to be placed 1/4" from bottom of page,
+'                    use null string "" if no page numbering
+'                  the NUMBEr object outResolution
+'                                       
+'Modifications/Date/Author: 08-JUL-2010, Steve McCourt
+'                             -adjusted code for new products
+'                             -adjusted main legend box location
+'                              because we dropped the n. mi.
+'                              scalebar and needed to move the 
+'                              Legend / Legende and Scale / Echelle
+'                              text
+'==========================================================
+
+theRegion = Self.Get(0).UCase
+statType = Self.Get(1).UCase
+mapType = Self.Get(2).UCase
+offsetSize  = Self.Get(3)
+pageSize  = Self.Get(4)
+addLogos = Self.Get(5)
+outFormat = Self.Get(6).UCase
+dateStr = Self.Get(7) 'this is a historic date or a yyyyMMdd
+dateText = Self.Get(8)
+numobsText = Self.Get(9)
+outDir = Self.Get(10)
+theView = Self.Get(11)
+pagenumberStr = Self.Get(12)
+addnumobsBox = Self.Get(13)
+blankPage = Self.Get(14)
+outResolution = Self.Get(15)
+
+'==========================================================
+'make sure we can accept anything but ISIS for CLIM
+'==========================================================
+
+if(mapType <> "ISIS") then
+  mapType = "CLIM"
+end
+
+'==========================================================
+'get the information from our maps_lut.dbf
+'==========================================================
+
+mapslutTable = _cisDBDir+"\climate_products_lut.dbf"
+mapsVTab = VTab.Make(mapslutTable.AsFileName, False, False)
+theBitmap = mapsVTab.GetSelection
+qryStr = "([Stat_id] = "+statType.Quote+")"
+
+mapsVTab.Query(qryStr, theBitmap, #VTAB_SELTYPE_NEW)
+
+theRec = theBitmap.GetNextSet(-1)
+
+'==========================================================
+'now get the postions we need...
+'==========================================================
+
+if(mapType = "ISIS") then
+  shortmapType = "I"
+else
+  shortmapType = "C"
+end
+
+theField = mapsVTab.FindField(theRegion+"_"+shortmapType+"_"+"LGD_X")
+lgdboxX = mapsVTab.ReturnValue(theField, theRec)
+
+theField = mapsVTab.FindField(theRegion+"_"+shortmapType+"_"+"LGD_Y")
+lgdboxY = mapsVTab.ReturnValue(theField, theRec)
+
+theField = mapsVTab.FindField(theRegion+"_"+shortmapType+"_"+"DAT_X")
+dateboxX = mapsVTab.ReturnValue(theField, theRec)
+
+theField = mapsVTab.FindField(theRegion+"_"+shortmapType+"_"+"DAT_Y")
+dateboxY = mapsVTab.ReturnValue(theField, theRec)
+
+theField = mapsVTab.FindField(theRegion+"_"+shortmapType+"_"+"OBS_X")
+numobsboxX = mapsVTab.ReturnValue(theField, theRec)
+
+theField = mapsVTab.FindField(theRegion+"_"+shortmapType+"_"+"OBS_Y")
+numobsboxY = mapsVTab.ReturnValue(theField, theRec)
+
+theField = mapsVTab.FindField("ENG_TITLE1")
+engTitle = mapsVTab.ReturnValue(theField, theRec)
+theField = mapsVTab.FindField("ENG_TITLE2")
+engTitle = engTitle+NL+mapsVTab.ReturnValue(theField, theRec)
+
+theField = mapsVTab.FindField("FRE_TITLE1")
+freTitle = mapsVTab.ReturnValue(theField, theRec)
+theField = mapsVTab.FindField("FRE_TITLE2")
+freTitle = freTitle+NL+mapsVTab.ReturnValue(theField, theRec)
+
+mapsVTab.Deactivate
+mapsVTab = nil
+
+mapTemplateName = theRegion+"_"+mapType+"_MAP"
+lgdboxTemplateName = "LGD_ALL"
+scalebarTemplateName = theRegion+"_"+mapType+"_SCALEBAR"
+dateboxTemplateName = "LGD_DATE"
+numobsboxTemplateName = "LGD_NUMOBS"
+
+'==========================================================
+'stat specific things
+'==========================================================
+
+if(statType = "PRMED") then
+  if(theRegion = "GL") then
+    lgdTemplateName = "LGD_LAKEICETYPES"
+  else
+    lgdTemplateName = "LGD_SEAICETYPES"
+  end
+elseif(statType = "DEPRT") then
+  lgdTemplateName = "LGD_DEPARTURE"
+elseif(statType.Contains("FRQ")) then
+  lgdTemplateName = "LGD_FREQUENCY"
+else
+  lgdTemplateName = "LGD_CONCENTRATION"
+end
+
+'==========================================================
+'ensure sea ice does not appear in lake ice products
+'==========================================================
+
+if(theRegion = "GL") then
+  if(engTitle.Contains(" SEA ICE ")) then
+    engTitle = engTitle.Substitute(" SEA ICE ", " LAKE ICE ")
+    freTitle = freTitle.Substitute(" GLACE DE MER ", " GLACE DE LAC ")
+  end
+end
+
+'==========================================================
+'do region specific things
+'==========================================================
+
+pageOrientation = "LANDSCAPE"
+
+if(theRegion = "EA") then
+  pageOrientation = "PORTRAIT"
+elseif(theRegion = "WA") then    
+  if(mapType = "CLIM") then
+    pageOrientation = "PORTRAIT"
+  end
+end
+
+scalebarY = 4.20
+
+'==========================================================
+'get all the layouts
+'==========================================================
+
+mapLayout = av.FindDoc("8.5x11")
+lgdLayout = av.FindDoc("lgd")
+tmpLayout = av.FindDoc("tmp")
+
+if(mapLayout = nil) then
+  mapLayout = Layout.Make
+  mapLayout.SetName("8.5x11")
+end
+if(lgdLayout = nil) then
+  lgdLayout = Layout.Make
+  lgdLayout.SetName("lgd")
+end
+if(tmpLayout = nil) then
+  tmpLayout = Layout.Make
+  tmpLayout.SetName("tmp")
+end
+
+lgdPDisplay = lgdLayout.GetDisplay
+
+'==========================================================
+'set portrait, inches, no snapping
+'==========================================================
+
+lgdPDisplay.SetUsingPrinterMargins(False)
+lgdPDisplay.SetMarginVisible(False)
+lgdPDisplay.SetGridActive(False)
+lgdPDisplay.SetPageSize(8.5@11)
+lgdPDisplay.SetUnits(#UNITS_LINEAR_INCHES)
+lgdPDisplay.SetDistanceUnits(#UNITS_LINEAR_INCHES)
+lgdPDisplay.SetMargin(Rect.MakeXY(0, 0, 0, 0))
+lgdMargin = lgdPDisplay.ReturnPageExtent
+lgdPageOrigin = lgdMargin.ReturnOrigin
+lgdLayout.GetWin.Open
+
+tmpPDisplay = tmpLayout.GetDisplay
+
+'==========================================================
+'set portrait, inches, no snapping
+'==========================================================
+
+tmpPDisplay.SetUsingPrinterMargins(False)  
+tmpPDisplay.SetMarginVisible(False)
+tmpPDisplay.SetGridActive(False)
+tmpPDisplay.SetPageSize(8.5@11)
+tmpPDisplay.SetUnits(#UNITS_LINEAR_INCHES)
+tmpPDisplay.SetDistanceUnits(#UNITS_LINEAR_INCHES)
+tmpPDisplay.SetMargin(Rect.MakeXY(0, 0, 0, 0))
+tmpMargin = tmpPDisplay.ReturnPageExtent
+tmpPageOrigin = tmpMargin.ReturnOrigin  
+tmpLayout.GetWin.Open
+
+'==========================================================
+'load the main legend box first into lgd
+'==========================================================
+
+for each atemplate in templateMgr.GetTemplates
+  if(atemplate.GetName = lgdboxTemplateName) then
+    lgdLayout.UseTemplate(atemplate)
+    lgdLayout.Invalidate
+    break
+  else
+    continue
+  end
+end
+
+'==========================================================
+'now let's set the titles 
+'==========================================================
+
+lgdGL = lgdLayout.GetGraphics
+
+for each g in lgdGl
+  if(g.Is(GraphicText)) then
+    if(g.GetText = ("ENGLISH TITLE 1"+NL+"ENGLISH TITLE 2")) then
+      g.SetText(engTitle)
+      
+      '====================================================
+      'now center it
+      '====================================================
+      
+      g.SetOrigin(Point.Make((lgdPageOrigin.GetX + 4.25 - 
+        (g.GetExtent.GetX / 2)), g.GetOrigin.GetY))      
+    elseif(g.GetText = ("FRENCH TITLE 1"+NL+"FRENCH TITLE 2")) then
+      g.SetText(freTitle)
+      
+      '====================================================
+      'now center it
+      '====================================================
+            
+      g.SetOrigin(Point.Make((lgdPageOrigin.GetX + 4.25 - 
+        (g.GetExtent.GetX / 2)), g.GetOrigin.GetY))      
+    end
+  end
+end
+
+'==========================================================
+'now group the legend box for safety sake
+'==========================================================
+
+lgdGL.SelectAll
+lgdGL.GroupSelected
+lgdLayout.Invalidate
+
+'==========================================================
+'now load the scale bar first into tmp
+'==========================================================
+
+for each atemplate in templateMgr.GetTemplates
+  if(atemplate.GetName = scalebarTemplateName) then
+    tmpLayout.UseTemplate(atemplate)
+    tmpLayout.Invalidate
+    break
+  else
+    continue
+  end
+end 
+
+'==========================================================
+'copy the scalebar in tmpLayout to the clipboard
+'==========================================================
+
+scaleBar = tmpLayout.GetGraphics.Get(0)
+scaleBar.Select
+scaleBarWidth = scaleBar.GetExtent.GetX
+tmpGL = tmpLayout.GetGraphics.CopySelected
+
+'==========================================================
+'paste the scalebar in lgdLayout now, unselecting everything
+'first to be sure we're in control here...
+'==========================================================
+
+lgdGL = lgdLayout.GetGraphics
+lgdGL.SelectAll
+lgdGL.UnselectAll
+lgdGL.Paste
+lgdGl.MoveSelectedToFront
+
+'==========================================================
+'now move the scalebar to 4.30 from the bottom of the page
+'and center it based on it's width
+'==========================================================
+
+scalebarX = 4.25 - (scalebarWidth / 2)
+
+scaleBar = lgdGL.GetSelected.Get(0)
+scaleBar.SetOrigin((lgdPageOrigin + (scalebarX@scalebarY)))
+lgdLayout.Invalidate
+
+'==========================================================
+'now get the legend 
+'==========================================================
+
+for each atemplate in templateMgr.GetTemplates
+  if(atemplate.GetName = lgdTemplateName) then
+    tmpLayout.UseTemplate(atemplate)
+    tmpLayout.Invalidate
+    break
+  else
+    continue
+  end
+end 
+
+'==========================================================
+'again, group for safety sake
+'==========================================================
+
+tmpGL = tmpLayout.GetGraphics
+tmpGL.SelectAll
+tmpGL.GroupSelected
+lgdHeight = (tmpGL.GetSelected.Get(0)).GetExtent.GetY
+lgdWidth = (tmpGL.GetSelected.Get(0)).GetExtent.GetX
+tmpGL.CopySelected
+
+'==========================================================
+'paste the legend in lgdLayout now, unselecting everything
+'first to be sure we're in control here...
+'==========================================================
+
+lgdGL = lgdLayout.GetGraphics
+lgdGL.SelectAll
+lgdGL.UnselectAll
+lgdGL.Paste
+lgdGL.MoveSelectedToFront
+
+'==========================================================
+'now center it using these hardcoded values
+'available space is bottom of legend/legende (6.16) text minus
+'top scale/echelle text (4.65) = 1.51
+'
+'updated values 09-JUL-2010
+'  bottom of legend / legende text  6.14
+'  top of scale / echelle text 4.50
+'  difference 6.14 - 4.50 = 1.64
+'==========================================================
+
+'***OLD*** lgdY = 4.65 + ((1.51 - lgdHeight) / 2)
+'***OLD*** lgdX = 4.25 - (lgdWidth / 2)
+lgdY = 4.53 + ((1.64 - lgdHeight) / 2)
+lgdX = 4.25 - (lgdWidth / 2)
+
+(lgdGL.GetSelected.Get(0)).SetOrigin(lgdPageOrigin + 
+  Point.Make(lgdX, lgdY))
+
+'==========================================================
+'now group everything again
+'==========================================================
+
+lgdGL.SelectAll
+lgdGL.GroupSelected
+
+lgdLayout.Invalidate
+
+'==========================================================
+'final map
+'==========================================================
+
+mapPDisplay = mapLayout.GetDisplay
+
+'==========================================================
+'set portrait, inches, no snapping
+'==========================================================
+
+mapPDisplay.SetUsingPrinterMargins(False)
+mapPDisplay.SetMarginVisible(False)
+mapPDisplay.SetGridActive(False)
+
+'==========================================================
+'set correct orientation
+'==========================================================
+
+if(pageOrientation = "PORTRAIT") then
+  mapPDisplay.SetPageSize(8.5@11)
+else
+  mapPDisplay.SetPageSize(11@8.5)
+end
+
+mapPDisplay.SetUnits(#UNITS_LINEAR_INCHES)
+mapPDisplay.SetDistanceUnits(#UNITS_LINEAR_INCHES)
+mapPDisplay.SetMargin(Rect.MakeXY(0, 0, 0, 0))
+mapMargin = mapPDisplay.ReturnPageExtent
+mapPageOrigin = mapMargin.ReturnOrigin
+mapLayout.GetWin.Open
+
+for each atemplate in templateMgr.GetTemplates
+  if(atemplate.GetName = mapTemplateName) then
+    mapLayout.UseTemplate(atemplate)
+    mapLayout.Invalidate
+    break
+  else
+    continue
+  end
+end 
+
+'==========================================================
+'now copy the legend to the map, bring to the front
+'and move to our position
+'==========================================================
+
+lgdGL = lgdLayout.GetGraphics
+lgdGL.SelectAll
+lgdGL.CopySelected
+
+mapGL = mapLayout.GetGraphics
+mapGL.UnselectAll
+mapGL.Paste
+mapGL.MoveSelectedToFront
+
+'==========================================================
+'have to use a dummy var here because avenue doesn't like 
+'it without...
+'==========================================================
+
+a = (mapGL.GetSelected.Get(0)).SetOrigin(mapPageOrigin + Point.Make(lgdboxX, lgdboxY))
+
+'==========================================================
+'date box
+'==========================================================
+
+for each atemplate in templateMgr.GetTemplates
+  if(atemplate.GetName = dateboxTemplateName) then
+    tmpLayout.UseTemplate(atemplate)
+    tmpLayout.Invalidate
+    break
+  else
+    continue
+  end
+end 
+
+'==========================================================
+'now copy the datebox to the map, bring to the front
+'and move to our position
+'==========================================================
+
+tmpGL = tmpLayout.GetGraphics
+tmpGL.SelectAll
+tmpGL.GroupSelected
+tmpGL.CopySelected
+
+mapGL = mapLayout.GetGraphics
+mapGL.UnselectAll
+mapGL.Paste
+mapGL.MoveSelectedToFront
+
+'==========================================================
+'have to use a dummy var here because avenue doesn't like 
+'it without...
+'==========================================================
+
+a = (mapGL.GetSelected.Get(0)).SetOrigin(mapPageOrigin + Point.Make(dateboxX, dateboxY))
+
+mapGL.UngroupSelected
+
+'==========================================================
+'now enter the text specified, we have to be careful
+'here because this has to be two lines, so check what
+'we've received and enforce 2 lines even if they only
+'sent us 1 - throw in some spaces just in case arcview
+'is fussy...
+'==========================================================
+
+textList = dateText.AsTokens(NL)
+
+if(textList.Count = 1) then
+  dateText = dateText+NL+" "
+end 
+
+txtToFind = "DATE LINE 1"+NL+"DATE LINE 2"
+av.Run("CIS.MAPS.SetText", {txtToFind, dateText, mapLayout, True}) 
+
+'==========================================================
+'numobs box
+'==========================================================
+
+if(addNumObsBox) then
+  for each atemplate in templateMgr.GetTemplates
+    if(atemplate.GetName = numobsboxTemplateName) then
+      tmpLayout.UseTemplate(atemplate)
+      tmpLayout.Invalidate
+      break
+    else
+      continue
+    end
+  end 
+  
+  '========================================================
+  'now copy the numobsbox to the map, bring to the front
+  'and move to our position
+  '========================================================
+  
+  tmpGL = tmpLayout.GetGraphics
+  tmpGL.SelectAll
+  tmpGL.GroupSelected
+  tmpGL.CopySelected
+  
+  mapGL = mapLayout.GetGraphics
+  mapGL.UnselectAll
+  mapGL.Paste
+  mapGL.MoveSelectedToFront
+
+  '========================================================
+  'have to use a dummy var here because avenue doesn't like 
+  'it without...
+  '========================================================
+  
+  a = (mapGL.GetSelected.Get(0)).SetOrigin(mapPageOrigin + 
+    Point.Make(numobsboxX, numobsboxY))
+  
+  mapGL.UngroupSelected
+
+  '========================================================
+  'now enter the text specified, we have to be careful
+  'here because this has to be three lines, so check what
+  'we've received and enforce 3 lines even if they only
+  'sent us 1 - throw in some spaces just in case arcview
+  'is fussy...
+  '========================================================
+  
+  textList = numobsText.AsTokens(NL)
+  if(textList.Count = 1) then
+    numobsText = numobsText+NL+" "+NL+" "  
+  elseif(textList.Count = 2) then
+    numobsText = numobsText+NL+" "
+  end
+  
+  txtToFind = "NUM OBS LINE 1"+NL+"NUM OBS LINE 2"+NL+"NUM OBS LINE 3"
+  av.Run("CIS.MAPS.SetText", {txtToFind, numobsText, mapLayout, False})  
+end
+
+'==========================================================
+'now set the view to the correct view
+'==========================================================
+
+for each g in mapGl
+  if(g.Is(ViewFrame)) then
+    g.SetView(theView, True)    
+  end
+end
+
+'==========================================================
+'if 9x12, copy the whole thing into the 9x12 layout...
+'==========================================================
+
+if(pageSize = "9x12") then
+
+  '========================================================
+  'group and copy the entire layout and we'll paste into
+  'the 9x12 layout and cleanout the 8.5x11 layout
+  '========================================================
+  
+  mapGL = mapLayout.GetGraphics
+  mapGL.SelectAll
+  mapGL.GroupSelected
+  mapGL.CopySelected
+  mapGL.Empty
+  mapLayout.GetWin.Close
+  av.GetProject.RemoveDoc(av.FindDoc("8.5x11"))  
+  
+  mapLayout = av.FindDoc("9x12")  
+  
+  if(mapLayout = nil) then
+    mapLayout = Layout.Make
+    mapLayout.SetName("9x12")
+  end  
+  
+  mapPDisplay = mapLayout.GetDisplay
+
+  '========================================================
+  'set inches, no snapping
+  '========================================================
+
+  mapPDisplay.SetUsingPrinterMargins(False)
+  mapPDisplay.SetMarginVisible(False)
+  mapPDisplay.SetGridActive(False)
+
+  '========================================================
+  'set correct orientation
+  '========================================================
+  
+  if(pageOrientation = "PORTRAIT") then
+    mapPDisplay.SetPageSize(9@12)
+  else
+    mapPDisplay.SetPageSize(12@9)
+  end
+  
+  mapPDisplay.SetUnits(#UNITS_LINEAR_INCHES)
+  mapPDisplay.SetDistanceUnits(#UNITS_LINEAR_INCHES)
+  mapPDisplay.SetMargin(Rect.MakeXY(0, 0, 0, 0))
+  mapMargin = mapPDisplay.ReturnPageExtent
+  mapPageOrigin = mapMargin.ReturnOrigin
+  mapLayout.GetWin.Open
+
+  '========================================================
+  'clean the layout if necessary
+  '========================================================
+  
+  mapGL = mapLayout.GetGraphics
+  mapGL.Empty
+  mapGL.Paste
+
+  '========================================================
+  'now offset if necessary
+  '========================================================
+    
+  if(offsetSize <> 0) then
+
+    '======================================================
+    'get the y of the graphics first
+    '======================================================
+
+    offsetY = (mapGL.Get(0)).GetOrigin.GetY
+    offsetX = (mapGL.Get(0)).GetOrigin.GetX + offsetSize
+    
+    a = (mapGL.Get(0)).SetOrigin(Point.Make(offsetX, offsetY)  )
+  end
+  
+  mapGL.UngroupSelected
+  mapLayout.Invalidate
+end
+
+'==========================================================
+'add logos if desired
+'==========================================================
+
+if(addLogos) then
+  av.Run("CIS.MAPS.AddLogos", {mapLayout})
+end
+
+'==========================================================
+'delete everything if we got a blank page request
+'==========================================================
+
+if(blankPage) then
+  mapGL.SelectAll
+  mapGL.Empty
+  mapGL.Invalidate
+end
+
+'==========================================================
+'now add a pagenumber if desired
+'==========================================================
+
+if(pagenumberStr.IsNull.Not) then
+  theGTextPt = mapPageOrigin + Point.Make(1,1) 
+  theGText = GraphicText.Make(pagenumberStr, theGTextPt)
+  theGText.SetAlignment(#TEXTCOMPOSER_JUST_CENTER)
+  
+  theTextSymbol = theGText.ReturnSymbols.Get(0)
+  theTextSymbol.SetFont(Font.Make("Arial", "Bold"))
+  theTextSymbol.SetSize(10)
+  
+  mapGL.Add(theGText)
+  mapGL.Invalidate
+  
+  theGTextOffset = theGText.GetBounds.GetWidth / 2
+  pageCenter = mapPDisplay.ReturnPageExtent.GetWidth / 2
+  theGTextPt = mapPageOrigin + Point.Make((pageCenter - theGTextOffset + offsetSize), 0.25)
+  theGText.SetOrigin(theGTextPt)
+end
+
+'==========================================================
+'create an out filename based on the product or we're printing
+'so send a null string to the script
+'==========================================================
+
+if(outFormat = "PRINT") then
+  outFN = ""
+else
+  if(pagenumberStr.IsNull.Not) then
+  
+    'find the numbers in the string
+    
+    pageNumber = ""
+    pagePrefix = ""
+    for each i in 0..(pagenumberStr.Count - 1)
+      c = pagenumberStr.Middle(i, 1)
+      if(c.IsNumber) then
+        pageNumber = pageNumber + c
+      else
+        pagePrefix = pagePrefix + c
+      end
+    end
+    
+    if(pageNumber.Count = 1) then
+      pageNumber = "00"+pageNumber
+    elseif(pageNumber.Count = 2) then
+      pageNumber = "0"+pageNumber
+    end
+    
+    pagePrefix = pagePrefix.Substitute(" ", "")
+    pagePrefix = pagePrefix.Substitute("-", "")    
+    
+    pagenumberStr = pagePrefix+pageNumber
+    
+    outFN = outDir+"\p_"+pagenumberStr+"_"+theRegion.LCase+"_"+statType.LCase+dateStr+"."+outFormat.LCase
+  else
+    outFN = outDir+"\"+theRegion.LCase+"_"+statType.LCase+dateStr+"."+outFormat.LCase
+  end
+end
+
+'==========================================================
+'now we'll export to a file
+'==========================================================
+
+av.Run("CIS.MAPS.ExportOrPrintLayout", {mapLayout, outFN,
+  outResolution})
+
+'==========================================================
+'now cleanup
+'==========================================================
+
+tmpLayout.GetGraphics.Empty
+tmpLayout.GetWin.Close
+lgdLayout.GetGraphics.Empty
+lgdLayout.GetWin.Close
+mapLayout.GetGraphics.Empty
+mapLayout.GetWin.Close
+
+av.GetProject.RemoveDoc(tmpLayout)
+av.GetProject.RemoveDoc(lgdLayout)
+av.GetProject.RemoveDoc(mapLayout)
+

@@ -1,0 +1,361 @@
+'==========================================================
+'Script Name: CIS.STATS.Main
+'
+'Purpose: Main routine for generating standard CIS climate
+'         products.
+'         
+'Files Required: 
+'
+'Scripts Required: CIS.ALL.ImportCov
+'                  CIS.ALL.RunDosCmd
+'
+'Global Variables: _cisTmpDir
+'                  _cisDBDir
+'
+'Original Author: Steve McCourt (CIS)
+'
+'Original Script Date: 23-AUG-2003
+'
+'Objects Received: 
+'
+'Objects Returned: 
+'                                       
+'Modifications/Date/Author: 25-APR-2005, Steve McCourt
+'                             -switched the order to merge
+'                              the arctic grids from ea,wa,hb
+'                              to wa,ea,hb because of the 
+'                              nodata hole in the NW corner
+'                              of the EA in 1997, 1998
+'                           07-MAY-2010, Steve McCourt
+'                             -added new product for 
+'                              concentration when ice present
+'                           20-JUL-2010, Steve McCourt
+'                             -code for inserting substituted
+'                              charts was not working correctly
+'                              if the same chart was used more
+'                              than once as a substitution
+'                             -re-written as a standalone
+'                              script now
+'                             -CIS.All.ImportCov was changed
+'                              too but changes are backwards-
+'                              compatible 
+'                            21-JUL-2010, Steve McCourt
+'                              -added some logic to deal with
+'                               ratio code 6 (user params too)
+'                            10-AUG-2010, Steve McCourt
+'                              -frequency of old ice for EC
+'                               was a trace to 10/10 in old
+'                               atlas but this is not accurate
+'                              -it's set to 1 to 10/10 now
+'                              -there is code below to change
+'                               this to 0.3 if you feel like it
+'                           03-NOV-2010, Steve McCourt
+'                             -patching fast ice areas AFTER
+'                              the grid was computed was not
+'                              the best logic, we will now patch
+'                              each input grid BEFORE processing
+'                           19-MAY-2011, Steve McCourt
+'                             -adding a script and code to ensure
+'                              historical date 1001 has ALL first
+'                              year ice re-coded to old (code 7)
+'==========================================================
+
+'==========================================================
+'set the globals
+'==========================================================
+
+av.Run("CIS.ALL.Globals", {})
+
+'==========================================================
+'there is a known limitation on the number of requests that
+'the spatial analyst can receive - this script is pretty
+'heavy-duty on spatial analyst, so we need to limit the 
+'number of weeks that are processed at any given time.
+'the default will be 2 to be safe, but the user can increase
+'this value until they discover a reasonable value
+'==========================================================
+
+maxNumOfHistDates = "a"
+
+while (maxNumOfHistDates.IsNumber.Not)  
+  maxNumOfHistDates = msgBox.Input("Software bug - Enter the "+
+    "maximum number of historic dates to process at once:",
+    "Max Number of Historic Dates To Process", "2") 
+  if(maxNumOfHistDates = nil) then
+    return nil
+  elseif(maxNumOfHistDates.IsNumber) then
+    if(maxNumOfHistDates < 1) then
+      msgBox.Info("Nice try! Choose a number greater than 0!", "Whoops!")
+        maxNumOfHistDates = "a"
+    end
+  end
+end 
+
+maxNumOfHistDates = maxNumOfHistDates.AsNumber
+
+'==========================================================
+'now get the user inputs
+'==========================================================
+
+userParams = av.Run("CIS.STATS.UserInput", {maxNumOfHistDates})
+
+'==========================================================
+'if we're dealing with AR, then process all 3 source regions
+'and merge at the end
+'==========================================================
+
+theRegion = userParams.Get(0)
+
+if(theRegion = "AR") then
+  rgList = {"EA", "WA", "HB"}
+else
+  rgList = {theRegion}
+end
+
+statsList = userParams.Get(1)
+histdateList = userParams.Get(2)
+startYear = userParams.Get(3)
+endYear = userParams.Get(4)
+outCellSize = userParams.Get(5)
+outDir = userParams.Get(6)
+saveArcticSourceGrids = userParams.Get(7)
+recodeFastIce = userParams.Get(8)
+patchRatioCodeIceTypes = userParams.Get(9)
+
+'==========================================================
+'due to recent designchanges, we now need a yearList in this
+'script
+'==========================================================
+
+yearList = {}
+for each i in StartYear..EndYear
+  yearList.Add(i)
+end
+
+'==========================================================
+'create a logfile now
+'==========================================================
+
+nowDate = Date.Now.SetFormat("yyyyMMddhhhhm")
+logFN = FileName.Make(_cisTmpDir+"\cisstats_"+nowDate.AsString+".txt")
+logFile = LineFile.Make(logFN, #FILE_PERM_WRITE)
+
+nowDate = Date.Now.SetFormat("yyyy/MM/dd hhhh:m")
+logFile.WriteElt("CIS Statistics Program Start:"++nowDate.AsString)
+statsStr = ""
+for each astat in statsList
+  statsStr = statsStr++astat
+end
+
+logFile.WriteElt("Years Used:"++startYear.AsString++"to"++endYear.AsString)
+logFile.WriteElt("Statistics:"++statsStr)
+
+if(recodeFastIce) then
+  logFile.WriteElt("Fast ice handling: Predominant ice type products,"++
+    "will re-code fast ice according to pre-determined ice types.")
+else
+  logFile.WriteElt("Fast ice handling: Predominant ice type products,"++
+    "will be code fast ice as first year ice (code 6).")
+end
+
+if(theRegion = "GL") then
+  if(patchRatioCodeIceTypes = -1) then
+    logFile.WriteElt("Ratio code very thick ice handling: more than 7%"++
+      "of input charts were ratio code. All very thick lake ice will"++
+      "automatically be assigned thick lake ice.")
+  elseif(patchRatioCodeIceTypes = 7) then
+    logFile.WriteElt("Ratio code very thick ice handling: less than 7%"++
+      "of input charts were ratio code. The user chose to encode all"++
+      "very thick lake ice as thick lake ice.")
+  elseif(patchRatioCodeIceTypes = 10) then
+    logFile.WriteElt("Ratio code very thick ice handling: less than 7%"++
+      "of input charts were ratio code. The user chose to encode all"++
+      "very thick lake ice as very thick lake ice.")
+  end
+else
+  if(patchRatioCodeIceTypes = -1) then
+    logFile.WriteElt("Ratio code first year ice handling: more than 7%"++
+      "of input charts were ratio code. All first year ice will"++
+      "automatically be assigned first year ice (code 6).")
+  elseif(patchRatioCodeIceTypes = 7) then
+    logFile.WriteElt("Ratio code first year ice handling: less than 7%"++
+      "of input charts were ratio code. The user chose to encode all"++
+      "first year ice (code 6) as thin first year ice.")
+  elseif(patchRatioCodeIceTypes = 10) then
+    logFile.WriteElt("Ratio code first year ice handling: less than 7%"++
+      "of input charts were ratio code. The user chose to encode all"++
+      "first year ice (code 6) as medium first year ice.")
+  elseif(patchRatioCodeIceTypes = 11) then
+    logFile.WriteElt("Ratio code first year ice handling: less than 7%"++
+      "of input charts were ratio code. The user chose to encode all"++
+      "first year ice (code 6) as thick first year ice.")
+  end
+end
+
+for each histdate in histdateList
+  logFile.WriteElt("Historic Date:"++histdate)
+  
+  for each aRegion in rgList
+    aRegion = aRegion.UCase
+    logFile.WriteElt("Region:"++aRegion) 
+    
+    '======================================================
+    'kill and recreate any temporary dirs
+    '======================================================
+   
+    importDir = _cisTmpDir+"\import_tmp"
+    statsDir = _cisTmpDir+"\stats_tmp"
+    
+    dirList = {importDir, statsDir}    
+    
+    for each adir in dirList
+      dirExists = File.Exists(adir.AsFileName)    
+      if(dirExists) then
+        cmdStr = "rmdir"++adir++"/Q /S" 
+        av.Run("CIS.ALL.RunDosCmd",{cmdStr})
+      end    
+      cmdStr = "mkdir"++adir
+      av.Run("CIS.ALL.RunDosCmd", {cmdStr})   
+    end
+
+    '======================================================
+    'get our list of charts to process
+    '======================================================
+
+    tmpList = av.Run("CIS.ALL.GetListOfChartsToProcess", {aRegion,
+      histdate, yearList})
+    
+    possibleCharts = tmpList.Get(0)
+    availableCharts = tmpList.Get(1)
+    missingCharts = tmpList.Get(2)
+    substituteCharts = tmpList.Get(3)
+    srcnameList = tmpList.Get(4)
+    
+    logFile.WriteElt("  Total possible charts ("+startYear.AsString++
+      "to"++endYear.AsString+"):"++possibleCharts.AsString)
+    logFile.WriteElt("  Total substitute charts used:"++
+      substituteCharts.AsString)
+    logFile.WriteElt("  Total available (includes substitute charts):"++
+      availableCharts.AsString)
+    logFile.WriteElt("  Total missing charts:"++missingCharts.AsString)
+    logFile.WriteElt("  Total charts assumed ice free (EC/GL only):"++
+      missingCharts.AsString)
+    logFile.WriteElt("")
+
+    '======================================================
+    'patch Oct 01 charts prior to processing
+    '  -hist date 1001 can contain charts from Sept that
+    '   would not have had the FY ice raised to second year
+    '  -this will convert ALL FY ice to old
+    '======================================================
+    if(((aRegion = "AR") or (aRegion = "EA") or (aRegion = "WA") or
+       (aRegion = "HB")) and (histdate = "1001")) then
+       for each asrcname in srcnameList
+         tmpFTab = FTab.Make(asrcname)
+         av.Run("CIS.ALL.PatchOctoberFirst", {tmpFTab})
+       end
+    end 
+    
+    for each astat in statsList   
+      astat = astat.LCase 
+      tmpGridFN = FileName.Make(statsdir+"\"+aRegion.LCase+"_"+
+        "xxtmp")
+
+      outGridFN = FileName.Make(outDir+"\"+aRegion.LCase+"_"+
+        astat+histDate)
+      
+      if(astat.Contains("frq")) then
+        if(astat = "o4frq") then
+          concThreshold = 4
+        else
+          if(aRegion = "EC") then
+            concThreshold = 1
+          else
+            concThreshold = 1
+          end 'region is ec
+        end      
+        av.Run("CIS.STATS.Frequencies", {srcnameList,
+          outcellSize, aRegion, concThreshold, astat,
+          tmpGridFN})
+      elseif(astat.Contains("ctavg")) then
+        av.Run("CIS.STATS.AverageConc", {srcnameList,
+          outcellSize, aRegion, tmpGridFN})
+      elseif(astat.Contains("prmed")) then
+        av.Run("CIS.STATS.PredomWhenIcePresent",{srcnameList,
+          outcellSize, aRegion, tmpGridFN, patchRatioCodeIceTypes, recodeFastIce,
+          histdate})     
+      elseif(astat.Contains("cpmed")) then
+        av.Run("CIS.STATS.ConcWhenIcePresent", {srcnameList,
+          outcellSize, aRegion, tmpGridFN})       
+      elseif(astat.Contains("med")) then
+        av.Run("CIS.STATS.Medians", {srcnameList, outcellSize,
+          aRegion, astat, tmpGridFN})
+      end
+
+      '====================================================
+      'now cleanup the grid 
+      '====================================================
+      
+      av.Run("CIS.STATS.CleanClimateGrid", {true, true, true,
+        false, aRegion, tmpGridFN, outGridFN, astat})
+        
+      av.PurgeObjects
+    end
+    av.PurgeObjects
+  end
+  av.PurgeObjects
+  
+  '======================================================
+  'now merge the arctic if requested
+  'this step needs to have WA on top of EA because of the 
+  'no data area in the NW corner during 1997 and 1998
+  '(Steve McCourt April 25, 2005)
+  '======================================================    
+  
+  if(theRegion = "AR") then
+    
+    for each astat in statsList
+      mergeList = {}
+      astat = astat.LCase
+      for each r in {"wa", "ea", "hb"}
+        gridFN = FileName.Make(outDir+"\"+r+"_"+astat+histDate)
+        mergeList.Add(gridFN)
+      end
+
+      '==================================================    
+      'now merge the arctic
+      '==================================================    
+      
+      outGridFN = FileName.Make(outDir+"\ar_"+astat+histDate) 
+      
+      noDataVal = 123
+      
+      av.Run("CIS.STATS.MergeArcticGrids",{mergeList, outGridFN,
+        noDataVal, astat})
+      
+      logFile.WriteElt("Region: AR")  
+      logFile.WriteElt("Historic Date:"++histdate)
+      logFile.WriteElt("  Arctic regions merged top to bottom: WA, EA, HB"+NL)  
+        
+      if(saveArcticSourceGrids.Not) then
+        for each afn in mergeList
+          Grid.DeleteDataSet(afn)
+        end
+      end           
+    end
+  end 
+  av.PurgeObjects
+end  
+
+nowDate = Date.Now.SetFormat("yyyyMMddhhhhm")
+logFile.WriteElt("CIS Statistics Program End:"++nowDate.AsString)
+logFile.Close
+
+msgbox.Info("Completed generating all statistics. All grids can be"++
+  "found in:"++NL++outDir, "Done!")
+
+av.PurgeObjects   
+
+
+
+

@@ -1,0 +1,182 @@
+'==========================================================
+'Script Name: CIS.MAPS.LoadStandardThemes
+'
+'Purpose: Loads all the required background themes into the
+'         specified view.  These include 2 bnd layers, a 
+'         latlong layer, and a land mask layer.
+'
+'Files Required: all required files in _cisrefDir
+'
+'Scripts Required: None
+'
+'Global Variables: _cisRefDir
+'
+'Original Author: Steve McCourt (CIS)
+'
+'Original Script Date: 16-MAY-2003
+'
+'Objects Received: the VIEW object theView
+'                  the BOOLEAN object doIsis
+'                  the STRING object theRegion
+'
+'Objects Returned: None
+'                                       
+'Modifications/Date/Author: 25-APR-2005, Steve McCourt
+'                             -variable prjStr was not
+'                              initialised for AR region
+'                           08-JUL-2010, Steve McCourt
+'                             -all latlongs are now black
+'==========================================================
+
+theView = Self.Get(0)
+doIsis = Self.Get(1)
+theRegion = (Self.Get(2)).LCase
+
+'theview = av.getactivedoc
+'doisis = false
+'theregion = "AR"
+
+'==========================================================
+'clean out the view first
+'==========================================================
+
+themeList = theView.GetThemes
+
+if(themeList.IsEmpty.Not) then
+  for each thm in themeList.Clone
+    theView.DeleteTheme(thm)
+  end
+end
+
+'==========================================================
+'ISIS and atlas maps have different projections associated
+'with them, and therefore different filenames
+'==========================================================
+
+if(doIsis) then
+  latlongStr = "_isislatlong_"
+  landStr = "_isisland_"
+  bndStr = "_isis_"
+  if(theRegion = "wa") then
+    prjStr = "lcc100"
+  elseif(theRegion = "ea") then
+    prjStr = "lcc81"
+  elseif(theRegion = "hb") then
+    prjStr = "lcc56"
+  elseif(theRegion = "ec") then
+    prjStr = "lcc60"
+  elseif(theRegion = "gl") then
+    prjStr = "lcc83"
+  end
+else
+  latlongStr = "_latlong_"
+  landStr = "_land_"
+  bndStr = "_atlas_"
+  if(theRegion = "ar") then
+    prjStr = "lcc100"
+  elseif(theRegion = "wa") then
+    prjStr = "lcc86"
+  elseif(theRegion = "ea") then
+    prjStr = "lcc70"
+  elseif(theRegion = "hb") then
+    prjStr = "lcc59"
+  elseif(theRegion = "ec") then
+    prjStr = "lcc60"
+  elseif(theRegion = "gl") then
+    prjStr = "lcc83"
+  end
+end
+
+'==========================================================
+'now set the srcnames
+'==========================================================
+
+backSrcName = SrcName.Make(_cisRefDir+"\shapefiles\bnds\"+theRegion+
+  bndStr+prjStr+".shp")
+borderSrcName = backSrcName
+landSrcName = SrcName.Make(_cisRefDir+"\shapefiles\lands\"+theRegion+
+  landStr+prjStr+".shp")
+latlongSrcName = SrcName.Make(_cisRefDir+"\shapefiles\latlongs\"+theRegion+
+  latlongStr+prjStr+".shp")
+
+'==========================================================
+'now create the themes
+'==========================================================
+
+backThm = Theme.Make(backSrcName)
+borderThm = Theme.Make(borderSrcName)
+landThm = Theme.Make(landSrcName)
+latlongThm = Theme.Make(latlongSrcName)
+
+'==========================================================
+'add the themes
+'==========================================================
+
+theView.AddTheme(backThm)
+theView.AddTheme(latlongThm)
+theView.AddTheme(landThm)
+theView.AddTheme(borderThm)
+
+'==========================================================
+'legend files
+'==========================================================
+
+'back
+if(theRegion = "ec") then
+  backlegendFN = (_cisRefDir+"\legends\back_legend_"+
+    "blue.avl").AsFileName
+else
+  backlegendFN = (_cisRefDir+"\legends\back_legend_"+
+    "white.avl").AsFileName
+end
+
+'latlong
+if(theRegion = "ar") then
+'  latlonglegendFN = (_cisRefDir+"\legends\latlong_legend_"+
+'    "light_dark_gray.avl").AsFileName
+  latlonglegendFN = (_cisRefDir+"\legends\latlong_legend_"+
+    "black.avl").AsFileName
+
+else
+  latlonglegendFN = (_cisRefDir+"\legends\latlong_legend_"+
+    "black.avl").AsFileName
+end
+
+'land
+landlegendFN = (_cisRefDir+"\legends\land_legend_"+
+  "tan.avl").AsFileName
+
+'border
+borderlegendFN = (_cisRefDir+"\legends\bnd_legend_"+
+  "outline.avl").AsFileName
+
+'==========================================================
+'now set the legends and themes visible
+'==========================================================
+    
+theLegend = backThm.GetLegend
+theLegend.Load(backlegendFN, #LEGEND_LOADTYPE_ALL)
+backThm.UpdateLegend
+backThm.SetVisible(True)
+
+theLegend = latlongThm.GetLegend
+theLegend.Load(latlonglegendFN, #LEGEND_LOADTYPE_ALL)
+latlongThm.UpdateLegend
+latlongThm.SetVisible(True)
+
+theLegend = landThm.GetLegend
+theLegend.Load(landlegendFN, #LEGEND_LOADTYPE_ALL)
+landThm.UpdateLegend
+landThm.SetVisible(True)
+
+theLegend = borderThm.GetLegend
+theLegend.Load(borderlegendFN, #LEGEND_LOADTYPE_ALL)
+borderThm.UpdateLegend
+borderThm.SetVisible(True)
+
+theView.InvalidateTOC(nil)
+theView.Invalidate
+
+
+
+

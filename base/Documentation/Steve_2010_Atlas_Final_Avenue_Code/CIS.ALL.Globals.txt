@@ -1,0 +1,96 @@
+'==========================================================
+'Script Name: CIS.ALL.Globals
+'
+'Purpose: Initializes required global variables.  It fails
+'         if it cannot read from \\CISArchive\climate
+'
+'         If this is running on XP, see the comment below 
+'         regarding the win32Dir variable
+'         
+'Files Required: None
+'
+'Scripts Required: None
+'
+'Global Variables: None
+'
+'Original Author: Steve McCourt (CIS)
+'
+'Original Script Date: 13-MAY-2003
+'
+'Objects Received: None
+'
+'Objects Returned: None
+'                                       
+'Modifications/Date/Author: 04-SEP-2003, Steve McCourt
+'                             -added line to force the 
+'                              working directory to _cisTmpDir
+'                           14-JUL-2004, Allain Cardinal
+'                             -changed NASDATA to CISArchive
+'                           19-MAY-2005, Steve McCourt
+'                             -updated vars for move from
+'                              climate1 to climate2 machine
+'                              (win2000 to winXP)
+'                           14-JUL-2005, Steve McCourt
+'                             -global vars are now handled
+'                              through one config file stored
+'                              in system var CLIMATOLOGY_CONFIG_FILE
+'                             -also tidied up hardcoding of
+'                              machine name and the system32
+'                              dir
+'==========================================================
+
+av.ClearGlobals
+
+_cisError = False
+_cisErrorMsg = "Everything's a-okay boss!"
+
+iniFileName = System.GetEnvVar("CLIMATOLOGY_CONFIG_FILE")
+
+'==========================================================
+'files/directories located on CISArchive
+'==========================================================
+
+_cisRemoteDir = av.Run("CIS.ALL.ReadINIValue", {"ice_atlas.apr",
+  "_cisRemoteDir", iniFileName})
+_cisDBDir = av.Run("CIS.ALL.ReadINIValue", {"ice_atlas.apr",
+  "_cisDBDir", iniFileName})
+
+'==========================================================
+'now return an error if CISArchive cannot be accessed
+'==========================================================
+
+if((File.Exists(_cisRemoteDir.AsFileName)).Not) then
+  _cisError = True
+  _cisErrorMsg = _cisRemoteDir++"is not available"
+end
+
+if(_cisError) then
+  msgbox.Error(_cisErrorMsg+" - EXITING", "There's a problem Houston!")
+  return nil
+end  
+
+'==========================================================
+'machine/OS specific
+'==========================================================
+
+_win32Dir = System.GetEnvVar("windir")+"\system32"
+_machineName = (System.QueryLocalMachineName("",15)).Trim
+
+'==========================================================
+'climatology directories located locally
+'==========================================================
+
+_cisLocalRootDir = av.Run("CIS.ALL.ReadINIValue", {"ice_atlas.apr",
+  "_cislocalRootDir", iniFileName})
+_cisTmpDir = av.Run("CIS.ALL.ReadINIValue", {"ice_atlas.apr",
+  "_cisTmpDir", iniFileName})
+_cisRefDir = av.Run("CIS.ALL.ReadINIValue", {"ice_atlas.apr",
+  "_cisRefDir", iniFileName})
+_cisClimateGridsDir = av.Run("CIS.ALL.ReadINIValue", {"ice_atlas.apr",
+  "_cisClimateGridsDir", iniFileName})
+
+'==========================================================
+'force the project's working directory to be _cisTmpDir
+'==========================================================
+
+av.GetProject.SetWorkDir(_cisTmpDir.AsFileName)

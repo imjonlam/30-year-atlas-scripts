@@ -1,0 +1,208 @@
+'==========================================================
+'Script Name: CIS.STATS.MergeArcticGrids
+'
+'Purpose: This script merges CIS arctic grids together.
+'         The script assumes you have delivered grids in the
+'         the order you wish them i.e. the top grid will be
+'         the top grid, the middle is the middle, and the last
+'         grid is the bottom.  Areas of overlap will be
+'         determined by this order.
+'
+'Files Required: _cisRefDir\shapefiles\ar_atlas_lcc100.shp
+'
+'Scripts Required: CIS.STATS.CleanClimateGrid
+'
+'Global Variables: _cisRefDir
+'                  _cisTmpDir
+'
+'Original Author: Steve McCourt (CIS)
+'
+'Original Script Date: 03-SEP-2003
+'
+'Objects Received: the LIST object gridFNList
+'                  the FILENAME object outGridFN
+'                  the NUMBER object noDataVal
+'                  the STRING object theStat 
+'
+'Objects Returned: the GRID object prjGrid
+'                                       
+'Modifications/Date/Author: 
+'==========================================================
+
+gridFNList = Self.Get(0)
+outGridFN = Self.Get(1)
+noDataVal = Self.Get(2)
+theStat = Self.Get(3).LCase
+
+if(outGridFN.Is(String)) then
+  outGridFN = outGridFN.AsFileName
+elseif(outGridFn.Is(SrcName)) then
+  outGridFN = outGridFN.AsString.AsFileName
+end
+
+newGridList = {}
+
+outCellSize = 0
+
+tmpvtabFN = FileName.Make(_cisTmpDir+"\reclass.dbf")
+
+for each agridFN in gridFNList
+  if(agridFN.Is(FileName)) then
+    agridFN = agridFN.AsString
+  elseif(agridFN.Is(SrcName)) then
+    agridFN = agridFN.AsString
+  end
+  theGrid = Grid.Make(Grid.MakeSrcName(agridFN))
+
+  '========================================================  
+  'now let's get the max grid cellsize for our 
+  'processing and set the extent equal to the
+  'grid's extent
+  '========================================================
+  
+  outCellSize = (theGrid.GetCellSize).Max(outCellSize)
+  gridExtent = theGrid.GetExtent
+  
+  Grid.SetAnalysisCellSize(#GRID_ENVTYPE_VALUE, outCellSize)
+  Grid.SetAnalysisExtent(#GRID_ENVTYPE_VALUE, gridExtent)
+
+  '========================================================
+  'now we need to set the no data areas to null for 
+  'correct merging to take place - this is not easily
+  'done with setNull since we have values, so we're 
+  'going to use the reclass request
+  '========================================================
+  
+  if(File.Exists(tmpvtabFN)) then
+    File.Delete(tmpvtabFN)
+  end
+  
+  tmpVTab = VTab.MakeNew(tmpvtabFN, dBASE)
+  if(tmpVTab.IsEditable.Not) then
+    tmpVTab.SetEditable(True)
+  end
+  
+  f1 = Field.Make("From", #FIELD_DECIMAL, 5, 0)
+  f2 = Field.Make("To", #FIELD_DECIMAL, 5, 0)
+  f3 = Field.Make("Out", #FIELD_DECIMAL, 5, 0)
+  fldList = {f1, f2, f3}
+  tmpVTab.AddFields(fldList)
+    
+  gridVAT = theGrid.GetVTab
+  valueFld = gridVAT.FindField("Value")
+  for each r in gridVAT
+    valueVal = gridVAT.ReturnValue(valueFld, r)
+    if((valueVal = noDataVal) or (valueVal.IsNull)) then
+      continue
+    end
+    
+    newRec = tmpVTab.AddRecord
+    fromFld = tmpVTab.FindField("From")
+    toFld = tmpVTab.FindField("To")
+    outFld = tmpVTab.FindField("Out")
+    
+    tmpVTab.SetValue(fromFld, newRec, valueVal)
+    tmpVTab.SetValue(toFld, newRec, valueVal)
+    tmpVTab.SetValue(outFld, newRec, valueVal)
+  end
+  
+  gridVAT.Deactivate
+  gridVAT = nil
+  saveEdits = True
+  tmpVTab.SetEditable(False)
+  
+  newGrid = theGrid.Reclass(tmpVTab, fromFld, toFld,
+    outFld, True)
+  tmpVTab.Deactivate
+  tmpVTab = nil
+ 
+  f1 = nil
+  f2 = nil
+  f3 = nil
+  File.Delete(tmpvtabFN)  
+  newGridList.Add(newGrid)
+  theGrid = nil
+  newGrid = nil
+  av.PurgeObjects
+end
+
+'==========================================================
+'we need to use the bnd for the arctic
+'==========================================================
+
+bndSrcName = SrcName.Make(_cisRefDir+"\shapefiles\bnds\ar_atlas_lcc100.shp")
+
+'==========================================================
+'just in case there is more than one shape in the bnd,
+'union all the shapes
+'==========================================================
+
+bndFTab = FTab.Make(bndSrcName)
+bndshpFld = bndFTab.FindField("Shape")
+
+totShp = bndFTab.ReturnValue(bndshpFld, 0)
+
+if(bndFTab.GetNumRecords > 1) then
+  for each rec in 1..(bndFTab.GetNumRecords - 1)
+    shp = bndFTab.ReturnValue(bndshpFld, rec)
+    totShp = totShp.ReturnUnion(shp)
+  end
+end
+
+'==========================================================
+'now we can essentially crop the grid by setting the
+'the GRID analysis extent by using the rounded extent of 
+'the bnd (this ensures a gridcell origin based on the 
+'cellsize
+'==========================================================
+
+totshpExtent = totShp.ReturnExtent
+llx = (((totshpExtent.GetLeft) / outcellSize).Round) * outcellSize
+lly = (((totshpExtent.GetBottom) / outcellSize).Round) * outcellSize
+urx = (((totshpExtent.GetRight) / outcellSize).Round) * outcellSize
+ury = (((totshpExtent.GetTop) / outcellSize).Round) * outcellsize
+
+Grid.SetAnalysisExtent(#GRID_ENVTYPE_VALUE, Rect.MakeXY(llx,lly,urx,ury))
+Grid.SetAnalysisCellSize(#GRID_ENVTYPE_VALUE, outCellSize)
+
+'==========================================================
+'now merge the grids
+'==========================================================
+
+topGrid = newGridList.Get(0)
+newGridList.Remove(0)
+
+tmpFN = FileName.Make(_cisTmpDir+"\mergetmp")
+g1 = topGrid.Merge(newGridList)
+
+'==========================================================
+'now set any no data holes as 123 (if they're present)
+'==========================================================
+
+g2 = (g1.IsNull).Con(123.AsGrid, g1)
+g2.SaveDataSet(tmpFN)
+
+g1 = nil
+g2 = nil
+av.PurgeObjects
+
+'==========================================================
+'now clean the grid by adding land, no data etc.
+'==========================================================
+
+addNoData = True
+addLand = True
+addAttribs = True
+clipIt = False
+theRegion = "ar"
+inGridStr = tmpFN.AsString
+
+av.Run("CIS.STATS.CleanClimateGrid", {addNoData, addLand, addAttribs,
+  clipIt, theRegion, inGridStr, outGridFN.AsString, theStat})
+
+'==========================================================
+'now cleanup
+'==========================================================
+
+Grid.DeleteDataSet(tmpFN)
+tmpFN = nil  

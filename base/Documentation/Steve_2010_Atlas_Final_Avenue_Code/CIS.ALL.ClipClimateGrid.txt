@@ -1,0 +1,142 @@
+'==========================================================
+'Script Name: CIS.ALL.ClipClimateGrid
+'
+'Purpose: This script "clips" a climate grid to it's
+'         known BND.
+'
+'Files Required: _cisDBDir\analysis_extents_lut.dbf
+'                _cisRefDir\shapefiles\*_atlas_lcc*.shp
+'
+'Scripts Required: none
+'
+'Global Variables: _cisDBDir
+'                  _cisRefDir
+'
+'Original Author: Steve McCourt (CIS)
+'
+'Original Script Date: 03-MAR-2003
+'
+'Objects Received: the STRING object theRegion
+'                  the STRING object ingridStr
+'                  the NUMBER object incentMer
+'                  the FILENAME object outFileName
+'
+'Objects Returned: None
+'                                       
+'Modifications/Date/Author: 27-SEP-2006, Steve McCourt
+'                             -outFileName was not explicitly
+'                              set to nil which caused problems
+'                              for WA maps
+'==========================================================
+
+theRegion = (Self.get(0)).LCase
+ingridStr = Self.Get(1)
+incentMer = Self.Get(2)
+outFileName = Self.Get(3)
+doISIS = Self.Get(4)
+
+if(ingridStr.Is(FileName)) then
+  ingridStr = ingridStr.AsString
+elseif(outFileName.Is(SrcName)) then
+  ingridstr = ingridStr.AsString
+end
+
+if(outFileName.Is(String)) then
+  outFileName = outFileName.AsFileName
+elseif(outFileName.Is(SrcName)) then
+  outFileName = outFileName.AsString.AsFileName
+end
+
+inGrid = Grid.Make(Grid.MakeSrcName(ingridStr))
+
+outcellSize = inGrid.GetCellsize
+oldgridRect = inGrid.GetExtent
+
+Grid.SetAnalysisCellSize(#GRID_ENVTYPE_VALUE, outcellSize)
+Grid.SetAnalysisExtent(#GRID_ENVTYPE_VALUE, oldgridRect)
+
+'==========================================================
+'we need to use the bnd for the region (truncate the 
+'central meridian because the great lakes bnd is named
+'*lcc83* not *lcc83.5*
+'==========================================================
+
+if(doISIS) then
+  bndSrcName = SrcName.Make(_cisRefDir+"\shapefiles\bnds\"+theRegion+
+    "_isis_lcc"+incentMer.Truncate.Abs.AsString+".shp")
+else
+  bndSrcName = SrcName.Make(_cisRefDir+"\shapefiles\bnds\"+theRegion+
+    "_atlas_lcc"+incentMer.Truncate.Abs.AsString+".shp")
+end
+
+'==========================================================
+'just in case there is more than one shape in the bnd,
+'union all the shapes
+'==========================================================
+
+bndFTab = FTab.Make(bndSrcName)
+bndshpFld = bndFTab.FindField("Shape")
+
+totShp = bndFTab.ReturnValue(bndshpFld, 0)
+
+if(bndFTab.GetNumRecords > 1) then
+  for each rec in 1..(bndFTab.GetNumRecords - 1)
+    shp = bndFTab.ReturnValue(bndshpFld, rec)
+    totShp = totShp.ReturnUnion(shp)
+  end
+end
+
+'==========================================================
+'get the extent of the totShp to use for clipping
+'==========================================================
+
+newExtent = totShp.ReturnExtent
+
+llx = newExtent.GetLeft
+lly = newExtent.GetBottom
+urx = newExtent.GetRight
+ury = newExtent.GetTop
+
+bndFTab.Deactivate
+
+'==========================================================
+'finally extract the grid using the original bnd shape
+'==========================================================
+
+g1 = inGrid.ExtractByPolygon(totShp, Prj.MakeNull, False)
+g1.BuildSTA
+
+'========================================================      
+'now ensure that all grid origins begin at a multiple
+'of the cellsize, otherwise, cells can be misaligned
+'========================================================      
+
+llx = ((llx / outcellSize).Floor) * outcellSize
+lly = ((lly / outcellSize).Floor) * outcellSize
+urx = ((urx / outcellSize).Ceiling) * outcellSize
+ury = ((ury / outcellSize).Ceiling) * outcellSize
+
+'==========================================================
+'now we can essentially crop the grid by re-setting the
+'the GRID analysis extent  
+'==========================================================
+
+analysisRect = Rect.MakeXY(llx, lly, urx, ury)
+Grid.SetAnalysisExtent(#GRID_ENVTYPE_VALUE, analysisRect)
+
+clippedGrid = g1 * 1.AsGrid 
+clippedGrid.BuildSTA
+clippedGrid.SaveDataSet(outFileName)
+
+'==========================================================
+'now cleanup
+'==========================================================
+
+inGrid = nil
+bndFTab = nil
+g1 = nil
+clippedGrid = nil
+outFileName = nil
+
+av.PurgeObjects
+

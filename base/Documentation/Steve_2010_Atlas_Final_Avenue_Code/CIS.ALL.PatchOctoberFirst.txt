@@ -1,0 +1,763 @@
+'==========================================================
+'Script Name: CIS.ALL.PatchOctFirst
+'
+'Purpose: This script will receive an FTAB object and then
+'         proceed to convert all instance of FY ice to
+'         old (code 7.).
+'
+'         The script re-arranges the egg columns and combines
+'         columns where necessary and also ensures the numeric
+'         attribute fields are set as well.
+'
+'         This is useful for products for the 1001 historic 
+'         date where some input charts are dated September
+'         and thus have yet to have FY ice converted to 
+'         second year.
+'
+'Files Required: none
+'
+'Scripts Required: none
+'
+'Global Variables: none
+'
+'Original Author: Steve McCourt (CIS)
+'
+'Original Script Date: 31-MAY-2011
+'
+'Objects Received: the FTAB object theFTab
+'
+'Objects Returned: nothing
+'                                       
+'Modifications/Date/Author: 
+'==========================================================
+
+theFTab = Self.Get(0)
+theFTab.SetEditable(true)
+
+'==========================================================
+'create the required fields 
+'==========================================================
+pnttypeFld = theFTab.FindField("Pnt_type")
+eggattrFld = theFTab.FindField("Egg_attr")
+userattrFld = theFTab.FindField("User_attr")
+ctFld = theFTab.FindField("E_ct")
+caFld = theFTab.FindField("E_ca")
+cbFld = theFTab.FindField("E_cb")
+ccFld = theFTab.FindField("E_cc")
+cdFld = theFTab.FindField("E_cd")
+soFld = theFTab.FindField("E_so")
+saFld = theFTab.FindField("E_sa")
+sbFld = theFTab.FindField("E_sb")
+scFld = theFTab.FindField("E_sc")
+sdFld = theFTab.FindField("E_sd")
+seFld = theFTab.FindField("E_se")
+faFld = theFTab.FindField("E_fa")
+fbFld = theFTab.FindField("E_fb")
+fcFld = theFTab.FindField("E_fc")
+fdFld = theFTab.FindField("E_fd")
+feFld = theFTab.FindField("E_fe")
+csFld = theFTab.FindField("E_cs")
+nctFld = theFTab.FindField("N_ct")
+ncoiFld = theFTab.FindField("N_coi")
+ncmyFld = theFTab.FindField("N_cmy")
+ncsyFld = theFTab.FindField("N_csy")
+ncfyFld = theFTab.FindField("N_cfy")
+ncfytkFld = theFTab.FindField("N_cfy_tk")
+ncfymFld = theFTab.FindField("N_cfy_m")
+ncfytnFld = theFTab.FindField("N_cfy_tn")
+ncyiFld = theFTab.FindField("N_cyi")
+ncgwFld = theFTab.FindField("N_cgw")
+ncgFld = theFTab.FindField("N_cg")
+ncnFld = theFTab.FindField("N_cn")
+ncbFld = theFTab.FindField("N_cb")
+
+'==========================================================
+'work only on eggs and fast ice
+'==========================================================
+qryStr = "((([Pnt_type] >= 117) and ([Pnt_type] <= 122)) or ([Pnt_type] = 106))"
+theBitmap = theFTab.GetSelection
+theFTab.Query(qryStr, theBitmap, #VTAB_SELTYPE_NEW)
+
+for each bit in theBitmap 
+  '========================================================
+  'not bothering with the E column
+  '========================================================  
+  pnttypeVal = theFTab.ReturnValue(pnttypeFld, bit)
+  eggattrVal = (theFTab.ReturnValue(eggattrFld, bit)).Trim
+  userattrVal = (theFTab.ReturnValue(userattrFld, bit)).Trim
+  ctVal = (theFTab.ReturnValue(ctFld, bit)).Trim
+  caVal = (theFTab.ReturnValue(caFld, bit)).Trim
+  cbVal = (theFTab.ReturnValue(cbFld, bit)).Trim
+  ccVal = (theFTab.ReturnValue(ccFld, bit)).Trim
+  cdVal = (theFTab.ReturnValue(cdFld, bit)).Trim
+  soVal = (theFTab.ReturnValue(soFld, bit)).Trim
+  saVal = (theFTab.ReturnValue(saFld, bit)).Trim
+  sbVal = (theFTab.ReturnValue(sbFld, bit)).Trim
+  scVal = (theFTab.ReturnValue(scFld, bit)).Trim
+  sdVal = (theFTab.ReturnValue(sdFld, bit)).Trim
+  seVal = ""
+  faVal = (theFTab.ReturnValue(faFld, bit)).Trim
+  fbVal = (theFTab.ReturnValue(fbFld, bit)).Trim
+  fcVal = (theFTab.ReturnValue(fcFld, bit)).Trim
+  fdVal = (theFTab.ReturnValue(fdFld, bit)).Trim
+  feVal = ""
+  csVal = (theFTab.ReturnValue(csFld, bit)).Trim
+
+  '========================================================
+  'if fast ice (pnt_type 106) is FY in the EGG_ATTR, then
+  'convert it to old ice
+  '========================================================
+
+  if(pnttypeVal = 106) then 
+    hasFY = False
+    if(eggattrVal.IsNull.Not) then
+      eggattrList = eggattrVal.AsTokens("_")
+      
+      'now check index 6 (Sa)      
+      if(eggattrList.Get(6) <> "@") then
+      
+        '==================================================
+        'if FY ice, convert to old 
+        '==================================================
+        if((eggattrList.Get(6) = "6") or (eggattrList.Get(6) = "7") or
+           (eggattrList.Get(6) = "8") or (eggattrList.Get(6) = "9") or
+           (eggattrList.Get(6) = "1.") or (eggattrList.Get(6) = "4.")) then  
+          hasFY = True                 
+          eggattrList.Set(6, "7.") 
+        end 'is FY
+      end 'not @      
+
+      '====================================================
+      'now re-create EGG_ATTR and USER_ATTR (exactly the same 
+      'for one ice type in this case)
+      '====================================================
+      eggattrVal = ""
+      for each aVal in eggattrList
+        eggattrVal = eggattrVal+aVal.Trim+"_"
+      end 
+
+      '====================================================
+      'remove trailing _ character now and set user_attr
+      '====================================================
+      eggattrVal = eggattrVal.Trim
+      eggattrVal = eggattrVal.Left(eggattrVal.Count - 1)
+      userattrVal = eggattrVal
+      
+      '====================================================
+      'set numeric values now
+      '====================================================
+      if(hasFY) then
+        ncoiVal = "10.0"
+        ncmyVal = ""
+        ncsyVal = ""
+        ncfyVal = ""
+        ncfytkVal = ""
+        ncfymVal = ""
+        ncfytnVal = ""
+        ncyiVal = ""
+        ncgwVal = ""
+        ncgVal = ""
+        ncnVal = ""
+        ncbVal = ""
+      else
+        'to be safe do old ice too
+        if(((eggattrList.Get(6)).Trim = "7.") or
+          ((eggattrList.Get(6)).Trim = "8.") or
+          ((eggattrList.Get(6)).Trim = "9.")) then
+          ncoiVal = "10.0"
+          ncmyVal = ""
+          ncsyVal = ""
+          ncfyVal = ""
+          ncfytkVal = ""
+          ncfymVal = ""
+          ncfytnVal = ""
+          ncyiVal = ""
+          ncgwVal = ""
+          ncgVal = ""
+          ncnVal = ""
+          ncbVal = ""      
+        elseif((eggattrList.Get(6)).Trim = "5") then
+          ncoiVal = ""
+          ncmyVal = ""
+          ncsyVal = ""
+          ncfyVal = ""
+          ncfytkVal = ""
+          ncfymVal = ""
+          ncfytnVal = ""
+          ncyiVal = "10.0"
+          ncgwVal = "10.0"
+          ncgVal = ""
+          ncnVal = ""
+          ncbVal = ""
+        elseif((eggattrList.Get(6)).Trim = "4") then
+          ncoiVal = "10.0"
+          ncmyVal = ""
+          ncsyVal = ""
+          ncfyVal = ""
+          ncfytkVal = ""
+          ncfymVal = ""
+          ncfytnVal = ""
+          ncyiVal = "10.0"
+          ncgwVal = ""
+          ncgVal = "10.0"
+          ncnVal = ""
+          ncbVal = ""
+        end          
+      end  
+    '======================================================
+    'no eggattr value, then its assumed to be generic FY
+    'ice (code 6) so simply calc the numeric values to old ice
+    '======================================================
+    else 'eggattr is null
+      ncoiVal = "10.0"
+      ncmyVal = ""
+      ncsyVal = ""
+      ncfyVal = ""
+      ncfytkVal = ""
+      ncfymVal = ""
+      ncfytnVal = ""   
+      ncyiVal = ""
+      ncgwVal = ""
+      ncgVal = ""
+      ncnVal = ""
+      ncbVal = ""           
+    end 'eggattrVal not null
+    
+  '========================================================
+  'now the eggs
+  '========================================================
+  else   
+    '========================================================   
+    'ensure we have some convertible values for concentration
+    '========================================================   
+    if(caVal.IsNull) then
+      if(ctVal = "9+") then
+        caVal = "10"
+      else
+        caVal = ctVal
+      end
+    end
+    if(cbVal.IsNull) then
+      cbVal = "0"
+    end
+    if(ccVal.IsNull) then
+      ccVal = "0"
+    end
+  
+    '========================================================   
+    'now compute Cd
+    '======================================================== 
+    if((ctVal = "9+") or (ctVal = "10")) then
+      cdVal = (10 - caVal.AsNumber - cbVal.AsNumber - ccVal.AsNumber).SetFormat("d")
+    else
+      cdVal = (ctVal.AsNumber - caVal.AsNumber - cbVal.AsNumber - ccVal.AsNumber).SetFormat("d")
+    end
+    cdVal = cdVal.AsString    
+    
+    '========================================================
+    'check for FY first, if there's none, then continue
+    '========================================================
+    hasFY = False
+    for each aVal in {saVal, sbVal, scVal, sdVal, seVal}
+      if((aVal = "6") or (aVal = "7") or
+         (aVal = "8") or (aVal = "9") or
+         (aVal = "1.") or (aVal = "4.")) then
+        hasFY = True
+      end      
+    end     
+
+    '========================================================
+    'no FY, move on
+    '======================================================== 
+    
+    if(hasFY.Not) then
+      continue
+    end
+    
+    '========================================================
+    'FY present
+    'begin by converting any FY to 7. 
+    '========================================================
+    for each aVal in {"6", "7", "8", "9", "1.", "4."}
+      if(soVal = aVal) then
+        soVal = "7."
+      end 'so    
+      if(saVal = aVal) then
+        saVal = "7."
+      end 'sa
+      if(sbVal = aVal) then
+        sbVal = "7."
+      end 'sb
+      if(scVal = aVal) then
+        scVal = "7."
+      end 'sc
+      if(sdVal = aVal) then
+        sdVal = "7."
+      end 'sd
+      if(seVal = aVal) then
+        seVal = "7."
+      end 'se      
+    end 'aval
+
+    '========================================================
+    'also convert any multi or second year (8. 9.) to 7. 
+    'for simplicity
+    '========================================================
+    
+    for each aVal in {"8.", "9."}
+      if(soVal = aVal) then
+        soVal = "7."
+      end 'so    
+      if(saVal = aVal) then
+        saVal = "7."
+      end 'sa
+      if(sbVal = aVal) then
+        sbVal = "7."
+      end 'sb
+      if(scVal = aVal) then
+        scVal = "7."
+      end 'sc
+      if(sdVal = aVal) then
+        sdVal = "7."
+      end 'sd
+      if(seVal = aVal) then
+        seVal = "7."
+      end 'se      
+    end 'aval   
+        
+    '========================================================
+    'now sum and re-arrange columns as required
+    'deal with So first (its easy)   
+    '========================================================
+    if((soVal = "7.") and (saVal = "7.")) then    
+      soVal = ""
+    end
+
+    '========================================================
+    'fast ice (floe size 8) would get lost with logic below
+    'so flag it and deal with separately  
+    '========================================================
+    isFast = False
+    if((faVal = "8") or (fbVal = "8") or (fcVal = "8") or
+       (fdVal = "8") or (feVal = "8")) then
+      isFast = True
+    end
+    
+    '========================================================
+    'brute force approach, logic would be sketchy, run the code
+    'below twice and that should cleanup the egg
+    '  -run 1 deals with
+    '========================================================
+    for each i in 1..2
+      if((saVal = "7.") and (sbVal = "7.")) then
+        if(caVal >= cbVal) then
+          faVal = faVal
+        else
+          faVal = fbVal
+        end
+        
+        caVal = ((caVal.AsNumber + cbVal.AsNumber).SetFormat("d")).AsString
+        cbVal = ccVal
+        sbVal = scVal
+        fbVal = fcVal
+        ccVal = cdVal
+        scVal = sdVal
+        fcVal = fdVal
+        cdVal = ""
+        sdVal = ""
+        fdVal = ""
+      end
+    end 'for each i
+    
+    '========================================================
+    'finally tidy up concentration
+    '========================================================
+    if(caVal = "0") then
+      caVal = ""
+    end
+    if(cbVal = "0") then
+      cbVal = ""
+    end
+    if(ccVal = "0") then
+      ccVal = ""
+    end
+    if(cdVal = "0") then
+      cdVal = ""
+    end    
+
+    '========================================================
+    'fix fast ice first (floe size 8) - it always goes in 
+    'the right-most column, so go from right to left below
+    '========================================================
+    if(isFast) then
+      if(fcVal.IsNull.Not) then
+        fcVal = "8"
+      elseif(fbVal.IsNull.Not) then
+        fbVal = "8"
+      elseif(faVal.IsNull.Not) then
+        faVal = "8"
+      end      
+    end 'isFast
+
+    '========================================================
+    'fix new ice floe size, its always X (remember to ensure
+    'that Cs is blank
+    '========================================================
+    if(csVal.IsNull) then
+      if(saVal = "1") then
+        faVal = "X"
+      elseif(sbVal = "1") then
+        fbVal = "X"
+      elseif(scVal = "1") then
+        fcVal = "X"
+      end
+    end    
+    '========================================================
+    'tidy up Ca for single column egg
+    '========================================================
+    if(cbVal = "") then
+      caVal = ""
+    end
+    
+    '========================================================
+    're-create EGG_ATTR and USER_ATTR (we got lucky with this
+    'because the only dot will be 7. so we dont have to muck
+    'around with USER_ATTR
+    '  -note that strips and patches (csVal) should have a 
+    '   ~ char in front of it so add this now
+    '  -it only appears in EGG_ATTR and USER_ATTR so strip it
+    '   after we build this
+    '========================================================
+    if(csVal.IsNull.Not) then
+      if(csVal.Left(1) <> "~") then
+        csVal = "~"+csVal
+      end
+    end
+    
+    '====================================================
+    'ensure that cdVal is a null string in the eggattrList
+    'but we still need the value later, so just feed it 
+    'an empty string
+    '==================================================== 
+    
+    eggattrList = {ctVal, caVal, cbVal, ccVal, "", soVal, saVal,
+      sbVal, scVal, sdVal, seVal, faVal, fbVal, fcVal, fdVal, feVal,
+      csVal}
+    
+    eggattrVal = ""
+    for each aval in eggattrList
+      if(aval.IsNull) then
+        eggattrVal = eggattrVal + "@_"
+      else
+        eggattrVal = eggattrVal + aval + "_"
+      end
+    end
+    
+    csVal = csVal.Substitute("~","")    
+        
+    '====================================================
+    'remove trailing _ character now and set user_attr
+    '====================================================
+    eggattrVal = eggattrVal.Trim
+    eggattrVal = eggattrVal.Left(eggattrVal.Count - 1)
+    userattrVal = eggattrVal  
+    
+    '====================================================
+    'convert concentration to numbers for summing numeric
+    'attributes
+    '====================================================
+    if(ctVal = "9+") then
+      ctNum = 9.7
+    else
+      ctNum = ctVal.AsNumber.SetFormat("d.d")
+    end
+    caNum = caVal.AsNumber.SetFormat("d.d")
+    cbNum = cbVal.AsNumber.SetFormat("d.d")
+    ccNum = ccVal.AsNumber.SetFormat("d.d")
+    cdNum = cdVal.AsNumber.SetFormat("d.d")
+    
+    '========================================================
+    'now sort out our numeric columns
+    'remember that we have no first year and only 7. for old
+    '  so we can be lazy
+    '========================================================
+    ncoiVal = 0.0
+    ncmyVal = 0.0
+    ncsyVal = 0.0
+    ncfyVal = 0.0
+    ncfytkVal = 0.0
+    ncfymVal = 0.0
+    ncfytnVal = 0.0
+    ncyiVal = 0.0
+    ncgwVal = 0.0
+    ncgVal = 0.0
+    ncnVal = 0.0
+    ncbVal = 0.0
+
+    '========================================================
+    'for 9+ and 1 ice type, no need to look at traces
+    '========================================================
+    if((ctVal = "9+") and (caVal.IsNull)) then
+      if((saVal = "L.") or (saVal = "L")) then
+        ncbVal = 9.7
+      elseif(saVal = "7.") then
+        ncoiVal = 9.7
+      elseif(saVal = "5") then
+        ncyiVal = 9.7
+        ncgwVal = 9.7
+      elseif(saVal = "4") then
+        ncyiVal = 9.7
+        ncgVal = 9.7
+      elseif(saVal = "1") then
+        ncnVal = 9.7
+      end
+   
+    '========================================================
+    'for 10 and 1 ice type, no need to look at traces
+    '========================================================
+    elseif((ctVal = "10") and (caVal.IsNull)) then
+      if((saVal = "L.") or (saVal = "L")) then
+        ncbVal = 10.0
+      elseif(saVal = "7.") then
+        ncoiVal = 10.0
+      elseif(saVal = "5") then
+        ncyiVal = 10.0
+        ncgwVal = 10.0
+      elseif(saVal = "4") then
+        ncyiVal = 10.0
+        ncgVal = 10.0
+      elseif(saVal = "1") then
+        ncnVal = 10.0
+      end
+   
+    '========================================================
+    'for 1 ice type and Ct 1 to 9 (remember to look at So)
+    '========================================================
+    elseif(caVal.IsNull) then
+      if((saVal = "L.") or (saVal = "L")) then
+        ncbVal = ctVal.AsNumber.SetFormat("d.d")
+      elseif(saVal = "7.") then
+        ncoiVal = ctVal.AsNumber.SetFormat("d.d")
+      elseif(saVal = "5") then
+        ncyiVal = ctVal.AsNumber.SetFormat("d.d")
+        ncgwVal = ctVal.AsNumber.SetFormat("d.d")
+      elseif(saVal = "4") then
+        ncyiVal = ctVal.AsNumber.SetFormat("d.d")
+        ncgVal = ctVal.AsNumber.SetFormat("d.d")
+      elseif(saVal = "1") then
+        ncnVal = ctVal.AsNumber.SetFormat("d.d")
+      end
+      
+      'traces
+      if((soVal = "L.") or (soVal = "L")) then
+        ncbVal = ncbVal + 0.3
+      elseif(soVal = "7.") then
+        ncoiVal = ncoiVal + 0.3
+      elseif(soVal = "5") then
+        ncyiVal = ncyiVal + 0.3
+        ncgwVal = ncgwVal + 0.3
+      elseif(soVal = "4") then
+        ncyiVal = ncyiVal + 0.3
+        ncgVal = ncgVal + 0.3
+      elseif(soVal = "1") then
+        ncnVal = ncnVal + 0.3
+      end      
+
+    '========================================================
+    'for more than 1 ice type and Ct 1 to 9
+    '  we will need the vars ctNum, caNum, etc.
+    '========================================================
+    else
+      'column A
+      if((saVal = "L.") or (saVal = "L")) then
+        ncbVal = ncbVal + caNum 
+      elseif(saVal = "7.") then
+        ncoiVal = ncoiVal + caNum
+      elseif(saVal = "5") then
+        ncyiVal = ncyiVal + caNum
+        ncgwVal = ncgwVal + caNum
+      elseif(saVal = "4") then
+        ncyiVal = ncyiVal + caNum
+        ncgVal = ncgVal + caNum
+      elseif(saVal = "1") then
+        ncnVal = ncnVal + caNum
+      end
+  
+      'column B
+      if((sbVal = "L.") or (sbVal = "L")) then
+        ncbVal = ncbVal + cbNum 
+      elseif(sbVal = "7.") then
+        ncoiVal = ncoiVal + cbNum
+      elseif(sbVal = "5") then
+        ncyiVal = ncyiVal + cbNum
+        ncgwVal = ncgwVal + cbNum
+      elseif(sbVal = "4") then
+        ncyiVal = ncyiVal + cbNum
+        ncgVal = ncgVal + cbNum
+      elseif(sbVal = "1") then
+        ncnVal = ncnVal + cbNum
+      end
+      
+      'column C
+      if((scVal = "L.") or (scVal = "L")) then
+        ncbVal = ncbVal + ccNum 
+      elseif(scVal = "7.") then
+        ncoiVal = ncoiVal + ccNum
+      elseif(scVal = "5") then
+        ncyiVal = ncyiVal + ccNum
+        ncgwVal = ncgwVal + ccNum
+      elseif(scVal = "4") then
+        ncyiVal = ncyiVal + ccNum
+        ncgVal = ncgVal + ccNum
+      elseif(scVal = "1") then
+        ncnVal = ncnVal + ccNum
+      end
+      
+      'column D
+      if((sdVal = "L.") or (sdVal = "L")) then
+        ncbVal = ncbVal + cdNum 
+      elseif(sdVal = "7.") then
+        ncoiVal = ncoiVal + cdNum
+      elseif(sdVal = "5") then
+        ncyiVal = ncyiVal + cdNum
+        ncgwVal = ncgwVal + cdNum
+      elseif(sdVal = "4") then
+        ncyiVal = ncyiVal + cdNum
+        ncgVal = ncgVal + cdNum
+      elseif(sdVal = "1") then
+        ncnVal = ncnVal + cdNum
+      end    
+    
+      'traces
+      if((soVal = "L.") or (soVal = "L")) then
+        ncbVal = ncbVal + 0.3
+      elseif(soVal = "7.") then
+        ncoiVal = ncoiVal + 0.3
+      elseif(soVal = "5") then
+        ncyiVal = ncyiVal + 0.3
+        ncgwVal = ncgwVal + 0.3
+      elseif(soVal = "4") then
+        ncyiVal = ncyiVal + 0.3
+        ncgVal = ncgVal + 0.3
+      elseif(soVal = "1") then
+        ncnVal = ncnVal + 0.3
+      end  
+    end
+    
+    '========================================================
+    'now convert to strings
+    '  the first below were set 0 (number) so make them a 
+    '  null string
+    '========================================================
+    ncmyVal = ""
+    ncsyVal = ""
+    ncfyVal = ""
+    ncfytkVal = ""
+    ncfymVal = ""
+    ncfytnVal = ""
+    if(ncbVal = 0) then
+      ncbVal = ""
+    elseif((ncbVal = 10) and (ctVal = "9+")) then
+      ncbVal = " 9.7"
+    else   
+      ncbVal = (ncbVal.SetFormat("d.d")).AsString.Trim
+    end
+    if(ncoiVal = 0) then
+      ncoiVal = ""
+    elseif((ncoiVal = 10) and (ctVal = "9+")) then
+      ncoiVal = " 9.7"
+    else
+      ncoiVal = (ncoiVal.SetFormat("d.d")).AsString.Trim
+    end
+    if(ncyiVal = 0) then
+      ncyiVal = ""
+    elseif((ncyiVal = 10) and (ctVal = "9+")) then
+      ncyiVal = " 9.7"
+    else
+      ncyiVal = (ncyiVal.SetFormat("d.d")).AsString.Trim
+    end
+    if(ncgwVal = 0) then
+      ncgwVal = ""
+    elseif((ncgwVal = 10) and (ctVal = "9+")) then
+      ncgwVal = " 9.7"
+    else
+      ncgwVal = (ncgwVal.SetFormat("d.d")).AsString.Trim
+    end
+    if(ncgVal = 0) then
+      ncgVal = ""
+    elseif((ncgVal = 10) and (ctVal = "9+")) then
+      ncgVal = " 9.7"
+    else
+      ncgVal = (ncgVal.SetFormat("d.d")).AsString.Trim
+    end
+    if(ncnVal = 0) then
+      ncnVal = ""
+    elseif((ncnVal = 10) and (ctVal = "9+")) then
+      ncnVal = " 9.7"
+    else
+      ncnVal = (ncnVal.SetFormat("d.d")).AsString.Trim
+    end
+
+    '========================================================
+    'pad accordingly
+    '========================================================
+    if(ncbVal.Count = 3) then
+      ncbVal = " "+ncbVal
+    end
+    if(ncoiVal.Count = 3) then
+      ncoiVal = " "+ncoiVal
+    end
+    if(ncyiVal.Count = 3) then
+      ncyiVal = " "+ncyiVal
+    end
+    if(ncgwVal.Count = 3) then
+      ncgwVal = " "+ncgwVal
+    end
+    if(ncgVal.Count = 3) then
+      ncgVal = " "+ncgVal
+    end
+    if(ncnVal.Count = 3) then
+      ncnVal = " "+ncnVal
+    end               
+  end 'if pnttype
+  
+  '========================================================
+  'now set the new values
+  '========================================================
+  theFTab.SetValue(eggattrFld, bit, eggattrVal)
+  theFTab.SetValue(userattrFld, bit, userattrVal)
+  theFTab.SetValue(ctFld, bit, ctVal)
+  theFTab.SetValue(caFld, bit, caVal)
+  theFTab.SetValue(cbFld, bit, cbVal)
+  theFTab.SetValue(ccFld, bit, ccVal)
+  theFTab.SetValue(cdFld, bit, "")
+  theFTab.SetValue(soFld, bit, soVal)
+  theFTab.SetValue(saFld, bit, saVal)
+  theFTab.SetValue(sbFld, bit, sbVal)
+  theFTab.SetValue(scFld, bit, scVal)
+  theFTab.SetValue(sdFld, bit, sdVal)
+  theFTab.SetValue(seFld, bit, seVal)
+  theFTab.SetValue(faFld, bit, faVal)
+  theFTab.SetValue(fbFld, bit, fbVal)
+  theFTab.SetValue(fcFld, bit, fcVal)
+  theFTab.SetValue(fdFld, bit, fdVal)
+  theFTab.SetValue(feFld, bit, feVal)
+  theFTab.SetValue(csFld, bit, csVal)
+  theFTab.SetValue(ncoiFld, bit, ncoiVal)
+  theFTab.SetValue(ncmyFld, bit, ncmyVal)
+  theFTab.SetValue(ncsyFld, bit, ncsyVal)
+  theFTab.SetValue(ncfyFld, bit, ncfyVal)
+  theFTab.SetValue(ncfytkFld, bit, ncfytkVal)
+  theFTab.SetValue(ncfymFld, bit, ncfymVal)
+  theFTab.SetValue(ncfytnFld, bit, ncfytnVal)
+  theFTab.SetValue(ncyiFld, bit, ncyiVal)
+  theFTab.SetValue(ncgwFld, bit, ncgwVal)
+  theFTab.SetValue(ncgFld, bit, ncgVal)
+  theFTab.SetValue(ncnFld, bit, ncnVal)
+  theFTab.SetValue(ncbFld, bit, ncbVal)  
+end 'each bit
+
+theBitmap.ClearAll
+saveEdits = true
+theFTab.SetEditable(false)
+theFTab.Deactivate

@@ -1,0 +1,28 @@
+'==========================================================
+'Script Name: CIS.ALL.RunDosCmd
+'
+'Purpose: Executes a DOS command line string.
+'         
+'Files Required: None
+'
+'Scripts Required: None
+'
+'Global Variables: _win32Dir
+'
+'Original Author: Steve McCourt (CIS)
+'
+'Original Script Date: 01-JAN-2002
+'
+'Objects Received: the STRING object cmdStr
+'
+'Objects Returned: None
+'                                       
+'Modifications/Date/Author: 
+'==========================================================
+
+cmdStr = Self.Get(0)
+
+cmdexeStr = _win32Dir+"\cmd.exe /c"
+
+System.ExecuteSynchronous(cmdexeStr++cmdStr)
+

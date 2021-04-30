@@ -1,0 +1,558 @@
+'==========================================================
+'Script Name: CIS.STATS.PredomWhenIcePresent
+'
+'Purpose: This will calculate the predominant icetype
+'         when ice is present given a set of ftabs.
+'
+'         Assumes all input data are LCC100 projection.
+'
+'         The script will write the grid to disk using the
+'         outFileName variable.  This allows for resetting
+'         of the Spatial Analyst Extension without passing
+'         any GRID objects
+'          
+'
+'Files Required: _cisrefDir+"\rasters\fastice_grids\lcc100\fastice_types
+'
+'Scripts Required: CIS.ALL.AddPredomToFtab
+'
+'Global Variables: _cisRefDir
+'
+'Original Author: Steve McCourt (CIS)
+'
+'Original Script Date: 05-MAR-2003
+'
+'Objects Received: the LIST object ftabsrcnameList
+'                  the NUMBER object outcellSize
+'                  the STRING object theRegion
+'                  the STRING/FILENAME object outFileName
+'                  the NUMBER object patchRatioCodeIceTypes
+'                  the BOOLEAN object recodeFastIce
+'                  the STRING object histDate
+'
+'Objects Returned: None
+'                                       
+'Modifications/Date/Author: 17-JUN-2010, Steve McCourt
+'                             -completely re-written to 
+'                              accomodate FY ice types
+'                           21-JUL-2010, Steve McCourt
+'                             -patchRatioCodeIceTypes
+'                               -1 is all FY to code 6
+'                                6 is FY code 6 to code 6
+'                                8 is FY code 6 to code 7  (thin)
+'                               10 is FY code 6 to code 10 (med)
+'                               11 is FY code 6 to code 11 (thick)
+'                             -above logic is based on a
+'                              threshold of 7% (2 out of 30)
+'                              where source data have ratio codes
+'                             -the user will choose in the case 
+'                              where its less than 7%, otherwise
+'                              we automatically recode very thick
+'                              lake ice to thick, and all FY 
+'                              subcategories to first year (code 6)
+'                           08-SEP-2010, Steve McCourt
+'                             -AND grid statement when patching
+'                              ratio codes was incorrect, new
+'                              CON statement fixes that
+'                           03-NOV-2010, Steve McCourt
+'                             -patching fast ice areas AFTER
+'                              the grid was computed was not
+'                              the best logic, we will now patch
+'                              each input grid BEFORE processing
+'==========================================================
+
+ftabsrcnamelist = Self.Get(0)
+outcellSize = Self.Get(1)
+theRegion = (Self.Get(2)).LCase
+outFileName = Self.Get(3)
+patchRatioCodeIceTypes = Self.Get(4)
+recodeFastIce = Self.Get(5)
+histdateStr = Self.Get(6)
+
+if(outFileName.Is(String)) then
+  outFileName = outFileName.AsFileName
+elseif(outFileName.Is(SrcName)) then
+  outFileName = outFileName.AsString.AsFileName
+end
+
+Grid.SetAnalysisCellSize(#GRID_ENVTYPE_VALUE, outcellSize)
+
+'==========================================================
+'now set the analysis extent for our grids
+'==========================================================
+
+bndSrcName = SrcName.Make(_cisRefDir+"\shapefiles\bnds\"+theRegion+
+  "_atlas_lcc100"+".shp")  
+
+'==========================================================
+'just in case there is more than one shape in the bnd,
+'union all the shapes
+'==========================================================
+
+bndFTab = FTab.Make(bndSrcName)
+bndshpFld = bndFTab.FindField("Shape")
+
+totShp = bndFTab.ReturnValue(bndshpFld, 0)
+
+if(bndFTab.GetNumRecords > 1) then
+  for each rec in 1..(bndFTab.GetNumRecords - 1)
+    shp = bndFTab.ReturnValue(bndshpFld, rec)
+    totShp = totShp.ReturnUnion(shp)
+  end
+end
+
+bndFTab.Deactivate
+bndFTab = nil
+
+totshpExtent = totShp.ReturnExtent
+llx = (((totshpExtent.GetLeft) / outcellSize).Round) * outcellSize
+lly = (((totshpExtent.GetBottom) / outcellSize).Round) * outcellSize
+urx = (((totshpExtent.GetRight) / outcellSize).Round) * outcellSize
+ury = (((totshpExtent.GetTop) / outcellSize).Round) * outcellsize
+
+Grid.SetAnalysisExtent(#GRID_ENVTYPE_VALUE, Rect.MakeXY(llx,lly,urx,ury))
+
+'==========================================================
+'ensure the predominant icetype has been set in the input
+'ftabs by running the predominant ice type script first
+'==========================================================
+
+ftabList = {}
+for each asrcname in ftabsrcnameList
+  theFTab = FTab.Make(asrcname)
+  av.Run("CIS.ALL.AddPredomToFtab", {theFTab})  
+  ftabList.Add(theFTab)
+  theFTab.Deactivate
+end
+
+av.PurgeObjects
+
+'==========================================================
+'now we will convert all icetypes to a grid for each
+'ftab so we may determine number of observations of
+'each icetype
+'also, "ic" will keep count of the number of
+'observations of ice for determining the median
+'position for each cell at the end
+'==========================================================
+
+if(theRegion = "gl") then
+  icetypeList = {"ic", "fi", "vtk", "tk", "md", "tn", "nw"}
+else
+  icetypeList = {"ic", "fi", "oi", "fytk", "fymd", "fytn", "fy", "gw", "gr", "nw"}
+end
+
+for each icetype in icetypeList
+  '========================================================  
+  'we are going to maintain the FI grid in case the user does
+  'not want to patch the values
+  '========================================================    
+  if(icetype = "fi") then
+    values = {17}
+  elseif(icetype = "vtk") then
+    values = {10}
+  elseif(icetype = "tk") then
+    values = {7}
+  elseif(icetype = "md") then
+    values = {5}
+  elseif(icetype = "tn") then
+    values = {4}
+  elseif(icetype = "nw") then
+    values = {1, 2}
+
+  '========================================================    
+  'put icebergs in with old ice
+  '========================================================
+    
+  elseif(icetype = "oi") then
+    values = {12, 13, 14, 15}
+
+  '========================================================    
+  'fy sub-categories
+  '========================================================
+  
+  elseif(icetype = "fytk") then
+    values = {11}
+  elseif(icetype = "fymd") then
+    values = {10}
+  elseif(icetype = "fytn") then
+    values = {7,8,9}
+  elseif(icetype = "fy") then
+    values = {6}
+  elseif(icetype = "gw") then
+    values = {5}
+  elseif(icetype = "gr") then
+    values = {3, 4}
+  end
+
+  firstTime = True
+
+  for each theftab in ftabList
+    npstageFld = theftab.FindField("N_pstage")
+    
+    '======================================================      
+    'since regional extents vary over time, we expand the
+    'analysis extent by 200km (200,000m) to capture all
+    'input data and get rid of any no data issues that
+    'negate any processing within them
+    '======================================================      
+    
+    gridExtent = ((FTheme.Make(theftab)).ReturnExtent).ExpandBy(200000)
+
+    '======================================================      
+    'now ensure that all grid origins begin at a multiple
+    'of the cellsize, otherwise, cells can be misaligned
+    '======================================================      
+    
+    llx = gridExtent.GetLeft
+    lly = gridExtent.GetBottom
+    
+    llx = ((llx / outcellSize).Floor) * outcellSize
+    lly = ((lly / outcellSize).Floor) * outcellSize
+    
+    gridExtent.SetOrigin(llx@lly)  
+    gridParams = {outcellSize, gridExtent}    
+    
+    g1 = Grid.MakeFromFTab(theftab, Prj.MakeNull, npstageFld, 
+          gridParams)
+          
+    '======================================================      
+    'NOTE: all buildSTA and purgeObjects requests are
+    'done to ensure memory is cleaned up and temp grids
+    'are written to disk instead of in memory
+    '======================================================      
+          
+    g1.BuildSTA
+    
+    '========================================================  
+    'now patch the fast ice if required
+    '========================================================        
+    
+    if(recodeFastIce) then
+      fasticeGrid = Grid.Make(Grid.MakeSrcName(_cisrefDir+"\rasters\fastice_grids\lcc100\fastice_types"))
+      histdateFld = fasticeGrid.GetVTab.FindField("Fast_"+histdateStr)
+      valFld = fasticeGrid.GetVTab.FindField("Value")
+  
+      '==========================================================
+      'now reclass the grid based on the historic date
+      '  note, the "to" and "from" fields below are the range
+      '    of values to recode, NOT the to and from values ;)
+      '==========================================================
+      
+      g44 = fasticeGrid.Reclass(fasticeGrid.GetVTab, valFld, valFld, histdateFld, False)
+      
+      '==========================================================
+      'now re-code fast ice areas using the values in the tmpGrid
+      '==========================================================
+      
+      g45 = (g1 = 17.AsGrid).Con(g44, g1)
+      g1 = nil
+      g1 = g45
+      g1.BuildSTA
+      fasticeGrid = nil
+      histdateFld = nil
+      valFld = nil
+      g44 = nil
+      av.PurgeObjects
+    end 'recodeFastIce
+    
+    '======================================================
+    'for the east coast, we need to add a zero layer because
+    'if the extent isn't full (1968/69 to 1997/98) then ice
+    'beyond the extent will be forced to nodata
+    '======================================================
+
+    if(theRegion = "ec") then
+      bndSrcName = SrcName.Make(_cisRefDir+"\shapefiles\bnds\ec_atlas_lcc100.shp")
+      bndFTab = FTab.Make(bndSrcName)
+      tmpFld = bndFTab.FindField("Tmp")
+      if(tmpFld = nil) then        
+        tmpFld = Field.Make("Tmp", #FIELD_DECIMAL, 1, 0)
+        bndFTab.SetEditable(True)      
+        bndFTab.AddFields({tmpFld})
+        saveEdits = True
+        bndFTab.SetEditable(False)
+        tmpFld = bndFTab.FindField("Tmp")
+      end    
+      
+      '====================================================      
+      'again, ensure constant grid extents/origins
+      '====================================================      
+      
+      gridExtent = ((FTheme.Make(bndFTab)).ReturnExtent).ExpandBy(200000)
+      
+      llx = gridExtent.GetLeft
+      lly = gridExtent.GetBottom
+      
+      llx = ((llx / outcellSize).Floor) * outcellSize
+      lly = ((lly / outcellSize).Floor) * outcellSize
+      
+      gridExtent.SetOrigin(llx@lly)          
+      gridExtent = (FTheme.Make(bndFTab)).ReturnExtent
+      gridParams = {outcellSize, gridExtent}
+      zerogrid = Grid.MakeFromFTab(bndFTab, Prj.MakeNull, tmpFld,
+        gridParams)
+      g2 = g1.Merge({zerogrid})
+      bndFTab.SetEditable(True)
+      bndFTab.RemoveFields({tmpFld})
+      saveEdits = True
+      bndFTab.SetEditable(False)      
+      bndFTab.Deactivate     
+      g1 = nil
+      g1 = g2
+      g1.BuildSTA 
+      av.PurgeObjects      
+    end  
+
+    '======================================================      
+    'now we need to be careful because charts can have no 
+    'data holes in them (Arctic for example), so to alleviate 
+    'this we will merge the entire grid with a 123 layer - 
+    'this also fixes the the no processing in nodata areas and 
+    'allows us to have real frequencies based on the number 
+    'of real observations
+    '
+    'no data is 123, ice is 1, no ice is 0
+    '======================================================      
+  
+    g2 = (g1.IsNull).Con(123.AsGrid, g1) 
+    g2.BuildSTA
+
+    if(firstTime) then
+
+      '====================================================    
+      'initialize numobsGrid 
+      '====================================================
+
+      zeroGrid = g2 * 0.AsGrid
+      zeroGrid.BuildSTA
+      numobsGrid = zeroGrid
+      numobsGrid.BuildSTA
+      firstTime = False
+    end
+
+    '======================================================    
+    'initialize valGrid now - for "ic" we just want ice,
+    'not land/nodata/noice, otherwise, we cycle through the
+    'possible values in "values"
+    '======================================================    
+    
+    if(icetype = "ic") then
+      valGrid = ((g2 <= 17.AsGrid) and (g2 >= 1.AsGrid)) 
+      valGrid.BuildSTA   
+    else
+      valGrid = zeroGrid    
+      valGrid.BuildSTA
+      for each val in values
+        valGrid = (valGrid or (g2 = val.AsGrid))
+        valGrid.BuildSTA
+      end
+    end    
+
+    numobsGrid = numobsGrid + valGrid
+    numobsGrid.BuildSTA
+
+    theftab.Deactivate
+    g2 = nil
+    valGrid = nil
+    av.PurgeObjects
+  end
+
+  '========================================================
+  'now set the appropriate grid based on the icetype
+  '========================================================
+
+  if(icetype = "ic") then
+    icGrid = numobsGrid 
+    icGrid.BuildSTA
+  elseif(icetype = "fi") then
+    fiGrid = numobsGrid
+    fiGrid.BuildSTA
+  elseif(icetype = "vtk") then
+    vtkGrid = numobsGrid
+    vtkGrid.BuildSTA    
+  elseif(icetype = "tk") then
+    tkGrid = numobsGrid
+    tkGrid.BuildSTA
+  elseif(icetype = "md") then
+    mdGrid = numobsGrid
+    mdGrid.BuildSTA
+  elseif(icetype = "tn") then
+    tnGrid = numobsGrid
+    tnGrid.BuildSTA
+  elseif(icetype = "nw") then
+    nwGrid = numobsGrid
+    nwGrid.BuildSTA
+  elseif(icetype = "oi") then
+    oiGrid = numobsGrid
+    oiGrid.BuildSTA
+    
+  '========================================================    
+  'fy sub-categories
+  '========================================================
+
+  elseif(icetype = "fytk") then
+    fytkGrid = numobsGrid
+    fytkGrid.BuildSTA    
+  elseif(icetype = "fymd") then
+    fymdGrid = numobsGrid
+    fymdGrid.BuildSTA       
+  elseif(icetype = "fytn") then
+    fytnGrid = numobsGrid
+    fytnGrid.BuildSTA   
+  elseif(icetype = "fy") then
+    fyGrid = numobsGrid
+    fyGrid.BuildSTA
+  elseif(icetype = "gw") then
+    gwGrid = numobsGrid
+    gwGrid.BuildSTA
+  elseif(icetype = "gr") then
+    grGrid = numobsGrid
+    grGrid.BuildSTA
+  end
+  
+  numobsGrid = nil
+  av.PurgeObjects
+end  
+
+'==========================================================
+'now get the median position to pick from
+'we do this by condition checking the result of the
+'integer remainder of the number of observations of ice
+'divided by 2, if the number of obs is odd, simply
+'divide by 2 (GRID will truncate the 0.5) otherwise,
+'add 2 to the number of obs and divide by 2 thus
+'pulling the middle position up one (this is how
+'medians have always been done at CIS
+'==========================================================
+
+midposGrid = (icGrid % 2.AsGrid).Con(((icGrid + 1) / 2.AsGrid), ((icGrid + 2.AsGrid) / 2.AsGrid))
+midposGrid.BuildSTA
+
+'==========================================================
+'now we calculate the predominant icetype, this is
+'accomplished by checking if the number of occurences of the
+'thinnest icetype are >= the middleposition, if yes, set the
+'icetype, if not, keep checking the thicker icetypes by
+'consecutively summing the number of occurences until we
+'have a predominant icetype, if nothing is found, it must
+'be no ice, or zero
+'==========================================================
+
+if(theRegion = "gl") then
+  pr1Grid = (nwGrid >= midposGrid).Con(1.AsGrid,
+             ((tnGrid + nwGrid) >= midposGrid).Con(4.AsGrid,
+               ((mdGrid + tnGrid + nwGrid) >= midposGrid).Con(5.AsGrid,
+                 ((tkGrid + mdGrid + tnGrid + nwGrid) >= midposGrid).Con(7.AsGrid, 
+                   ((vtkGrid + tkGrid + mdGrid + tnGrid + nwGrid) >= midposGrid).Con(10.AsGrid, 
+                     ((fiGrid + vtkGrid + tkGrid + mdGrid + tnGrid + nwGrid) >= midposGrid).Con(17.AsGrid, 0.AsGrid)
+                                                                                        )
+                                                                          )
+                                                             )
+                                                   )
+                                      )
+else
+  pr1Grid = (nwGrid >= midposGrid).Con(1.AsGrid,
+             ((grGrid + nwGrid) >= midposGrid).Con(4.AsGrid,
+               ((gwGrid + grGrid + nwGrid) >= midposGrid).Con(5.AsGrid,
+                 ((fyGrid + gwGrid + grGrid + nwGrid) >= midposGrid).Con(6.AsGrid,
+                   ((fytnGrid + fyGrid + gwGrid + grGrid + nwGrid) >= midposGrid).Con(7.AsGrid,
+                     ((fymdGrid + fytnGrid + fyGrid + gwGrid + grGrid + nwGrid) >= midposGrid).Con(10.AsGrid, 
+                       ((fytkGrid + fymdGrid + fytnGrid + fyGrid + gwGrid + grGrid + nwGrid) >= midposGrid).Con(11.AsGrid,
+                         ((oiGrid + fytkGrid + fymdGrid + fytnGrid + fyGrid + gwGrid + grGrid + nwGrid) >= midposGrid).Con(12.AsGrid, 
+                           ((fiGrid + oiGrid + fytkGrid + fymdGrid + fytnGrid + fyGrid + gwGrid + grGrid + nwGrid) >= midposGrid).Con(17.AsGrid, 0.AsGrid)
+                                                                                                                         )
+                                                                                                           )
+                                                                                               )
+                                                                                   )
+                        
+                                                                        )
+                                                              )
+                                                   )
+                                      )
+end
+
+pr1Grid.BuildSTA
+midposGrid = nil
+
+'==========================================================
+'deal with first-year ice code 6 and very thick lake ice
+'when using ratio-code based source data
+'  -1 -more than 7% of observations are ratio code based
+'      so automatically patch
+'       -GL     - assign all very thick lake ice to thick lake ice
+'       -others - assign all first year categories to first year
+'                 code 6
+'   6 -less than 7% of observations are ratio code based
+'       -GL     - n/a
+'       -others - user has asked to assign first year code 6
+'   7 -less than 7% of observations are ratio code based
+'       -GL     - n/a
+'       -others - user has asked to assign thin first year
+'  10 -less than 7% of observations are ratio code based
+'       -GL     - assign all very thick lake ice to thick lake ice
+'       -others - user has asked to assign medium first year
+'  11 -less than 7% of observations are ratio code based
+'       -GL     - n/a
+'       -others - user has asked to assign thick first year
+'==========================================================
+
+if(theRegion = "GL") then
+  if(patchRatioCodeIceTypes = -1) then
+    pr2Grid = (pr1Grid = 10.AsGrid).Con(7.AsGrid, pr1Grid)
+  elseif(patchRatioCodeIceTypes = 7) then
+    pr2Grid = (pr1Grid = 10.AsGrid).Con(7.AsGrid, pr1Grid)
+  elseif(patchRatioCodeIceTypes = 10) then
+    pr2Grid = (pr1Grid = 10.AsGrid).Con(10.AsGrid, pr1Grid)
+  end  
+else
+  if(patchRatioCodeIceTypes = -1) then
+    pr2Grid = (pr1Grid >= 7.AsGrid).Con((pr1Grid <= 11.AsGrid).Con(6.AsGrid, pr1Grid), pr1Grid)  
+  elseif(patchRatioCodeIceTypes = 6) then
+    pr2Grid = (pr1Grid = 6.AsGrid).Con(6.AsGrid, pr1Grid)
+  elseif(patchRatioCodeIceTypes = 7) then
+    pr2Grid = (pr1Grid = 6.AsGrid).Con(7.AsGrid, pr1Grid)
+  elseif(patchRatioCodeIceTypes = 10) then
+    pr2Grid = (pr1Grid = 6.AsGrid).Con(10.AsGrid, pr1Grid)
+  elseif(patchRatioCodeIceTypes = 11) then
+    pr2Grid = (pr1Grid = 6.AsGrid).Con(11.AsGrid, pr1Grid)  
+  end  
+end
+
+pr1Grid = nil
+pr1Grid = pr2Grid
+pr2Grid = nil
+pr1Grid.BuildSTA
+av.PurgeObjects
+                         
+'==========================================================
+'finally clip the grid to it's pre-defined extent
+'==========================================================
+
+outcentmer = -100
+tmpFileName = outFileName.ReturnDir
+pr1FN = (tmpFileName.AsString+"\pr1").AsFileName
+pr2FN = (tmpFileName.AsString+"\pr2").AsFileName
+
+doISIS = False
+
+pr1Grid.SaveDataSet(pr1FN)
+
+av.Run("CIS.ALL.ClipClimateGrid", {theRegion, 
+  pr1FN, outcentMer, pr2FN, doISIS})
+  
+prGrid = Grid.Make(Grid.MakeSrcName(pr2FN.AsString))
+
+prGrid.BuildSTA
+prGrid.SaveDataSet(outFileName)
+
+pr1Grid = nil
+prGrid = nil
+
+'==========================================================
+'cleanup
+'==========================================================
+
+av.PurgeObjects
+Grid.DeleteDataSet(pr1FN)
+Grid.DeleteDataSet(pr2FN)

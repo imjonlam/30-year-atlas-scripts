@@ -1,0 +1,81 @@
+'==========================================================
+'Script Name: CIS.MAPS.HistoricDateList
+'
+'Purpose: Returns a correct historic date list based on a
+'         region.  Kind of messy to include in other scripts.
+'         
+'Files Required: _cisDBDir\hist_date_lut.dbf
+'
+'Scripts Required: 
+'
+'Global Variables: _cisDBDir
+'
+'Original Author: Steve McCourt (CIS)
+'
+'Original Script Date: 26-AUG-2003 
+'
+'Objects Received: the STRING object theRegion
+'
+'Objects Returned: the LIST object histdateList
+'                                       
+'Modifications/Date/Author: 
+'==========================================================
+
+theRegion = (Self.Get(0)).LCase
+
+'==========================================================
+'start by getting the hist_date_lut.dbf
+'==========================================================
+
+histVTabFN = FileName.Make(_cisDBDir+"\hist_date_lut.dbf")
+histVTab = VTab.Make(histVTabFN, False, False)
+
+if(theRegion = "ec") then
+  qryFld = "Use_south"
+elseif(theRegion = "gl") then
+  qryFld = "Use_lakes"
+else
+  qryFld = "Use_north"
+end
+
+qryStr = "(["+qryFld+"] = ""y"")"
+histBitmap = histVTab.GetSelection
+histVTab.Query(qryStr, histBitmap, #VTAB_SELTYPE_NEW)
+
+histdateFld = histVTab.FindField("Hist_date")
+
+histdateList = {}
+
+'==========================================================
+'now we need to run twice if we're GL or EC since they
+'span two years... so do this by skipping all records 
+'before October 1st (rec # 40)
+'==========================================================
+
+if((theRegion = "ec") or (theRegion = "gl")) then
+  
+  for each bit in histBitmap
+    if(bit < 40) then 
+      continue
+    end
+    histDate = histVTab.ReturnValue(histdateFld, bit)
+    histdateList.Add(histDate)
+  end
+  for each bit in histBitmap
+    if(bit >= 40) then 
+      continue
+    end
+    histDate = histVTab.ReturnValue(histdateFld, bit)
+    histdateList.Add(histDate)
+  end
+else
+    for each bit in histBitmap
+    histDate = histVTab.ReturnValue(histdateFld, bit)
+    histdateList.Add(histDate)
+  end
+end  
+
+histVTab.Deactivate
+histVTab = nil
+
+return histdateList

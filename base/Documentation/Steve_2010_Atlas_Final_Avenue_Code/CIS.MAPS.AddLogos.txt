@@ -1,0 +1,103 @@
+'==========================================================
+'Script Name: CIS.MAPS.AddLogos
+'
+'Purpose: Adds the environment canada and canada logos to
+'         the output products.
+'         
+'Files Required: _cisRefDir\graphics\logos\environment_canada.jpg.
+'                _cisRefDir\graphics\logos\canada_wordmark.jpg
+'
+'Scripts Required: None
+'
+'Global Variables: _cisRefDir
+'
+'Original Author: Steve McCourt (CIS)
+'
+'Original Script Date: 12-APR-2002
+'
+'Objects Received: the LAYOUT object theLayout
+'
+'Objects Returned: None
+'                                       
+'Modifications/Date/Author: 16-MAY-2003, Steve McCourt
+'                             -updated/cleaned up
+'==========================================================
+
+theLayout = Self.Get(0)
+
+theDisplay = theLayout.GetDisplay
+pageRect = theDisplay.ReturnExtent
+fnList = {(_cisRefDir+"\graphics\logos\environment_canada.jpg").AsFileName,
+          (_cisRefDir+"\graphics\logos\canada_wordmark.jpg").AsFileName}
+
+'==========================================================
+'load the jpeg extension to ensure no errors
+'==========================================================
+
+archomeDir = System.GetEnvVar("avhome")
+jpegextensionFN = (archomeDir+"\ext32\jfif.avx").AsFileName
+if(Extension.Find(jpegextensionFN) = nil) then
+  Extension.Open(jpegextensionFN)
+end
+
+pagesizeRect = theDisplay.ReturnPageExtent
+
+for each afn in fnList
+
+  '========================================================
+  'check to make sure the file exists
+  '========================================================
+  
+  if(File.Exists(afn).Not) then
+    continue
+  end
+
+  theGL = theLayout.GetGraphics
+
+  '========================================================
+  'plop the pictureframe on the page for now
+  '========================================================
+  
+  pfOrigin = pageRect.ReturnCenter + (2@2)
+  
+  pfRect = Rect.Make(pfOrigin, 1@1)
+  thePF = PictureFrame.Make(pfRect)
+  thePF.SetDisplay(theDisplay)
+  thePF.SetFileName(afn)
+  thePF.SetRefresh(#FRAME_REFRESH_ALWAYS)
+  thePF.Draw
+  pfExtentX = thePF.GetBounds.GetWidth
+  pfextentY = thePF.GetBounds.GetHeight
+  pfRatio = pfExtentY/pfExtentX
+
+  '========================================================
+  'set the height to 0.125 inches and scale the width
+  'based on the ratio from above
+  '========================================================
+  
+  pfextentY = 0.125
+  pfextentX = pfextentY/pfRatio
+  thePF.SetBounds(Rect.Make(pfOrigin, pfextentX@pfextentY))
+
+  '========================================================
+  'we want to align the logos 0.0625 inches from the edges
+  '  envcan goes top left
+  '  canada goes bottom right
+  '========================================================
+  
+  if(afn.AsString.Contains("wordmark")) then
+    newY = pagesizeRect.GetBottom + 0.0625
+    newX = pagesizeRect.GetRight - (pfextentX + 0.0625)
+  elseif(afn.AsString.Contains("environ")) then
+    newY = pagesizeRect.GetTop - (0.0625 + pfextentY)
+    newX = pagesizeRect.GetLeft + 0.0625
+  end
+  
+  thePF.SetOrigin(newX@newY)  
+  
+  theGL.Add(thePF)
+  theLayout.Invalidate 
+end
+
+
+

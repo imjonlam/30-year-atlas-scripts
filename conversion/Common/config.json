@@ -1,0 +1,14 @@
+{
+  "purpose": "config file for E00 to Climate Shapefile conversion",
+  "os": "windows",
+  "tmp": ["C:\\", "cis", "user_data", "{0}", "temp", "atlas_tmp"],
+
+  "avcimport": ["Common", "windows", "avcimport.exe"],
+  "avcexport": ["Common", "windows", "avcexport.exe"],
+
+  "lcc_metadata": ["Data", "sigrid3_LLC100_WGS84.xml"],
+  "ps_metadata": ["Data", "sigrid3_NPS100w80n_WGS84.xml"],
+
+  "create_poly": ["..", "..", "..", "derivedproducts", "Sigrid", "Sigrid-3"],
+  "sigrid2climate": ["sigrid2climate.py"]
+}

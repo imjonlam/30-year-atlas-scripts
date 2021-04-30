@@ -1,0 +1,144 @@
+'==========================================================
+'Script Name: CIS.ALL.AttributeDictionaries
+'
+'Purpose: Returns the specified attribute dictionary for
+'         use with climate product attribute tables.  Use
+'         either "predominant" "concentration", "frequency", 
+'         or "departure" to return a dictionary.  It returns
+'         an empty dictionary if none of the above could be 
+'         found.
+'         
+'Files Required: None
+'
+'Scripts Required: None
+'
+'Global Variables: None
+'
+'Original Author: Steve McCourt (CIS)
+'
+'Original Script Date: 24-SEP-2001
+'
+'Objects Received: the STRING object dictRequest
+'                  the STRING object lakeOrSea
+'
+'Objects Returned: the DICTIONARY object theDict
+'                                       
+'Modifications/Date/Author: 15-MAY-2003, Steve McCourt
+'                             -merged all dictionary scripts
+'                              into one now
+'                           24-AUG-2003, Steve McCourt
+'                             -added lake ice specific values
+'                           22-APR-2005, Steve McCourt
+'                             -changed the upper boundary
+'                              of frequency range 100 to 101
+'                              to 100 to 100
+'==========================================================
+
+dictRequest = (Self.Get(0)).LCase
+lakeOrSea = (Self.Get(1)).LCase
+
+if(dictRequest = "predominant") then
+
+  '========================================================  
+  'key from 1 to n, startVal, endVal, englishAttribute,
+  'frenchAttribute
+  '========================================================  
+  
+  if(lakeOrSea = "lake") then
+    theDict = Dictionary.Make(9)
+    theDict.Add(1, {0, 0, "Open Water Or Ice Free", "Eau libre ou libre de glace"})
+    theDict.Add(2, {1, 1, "New Lake Ice", "Nouvelle glace de lac"})
+    theDict.Add(3, {4, 4, "Thin Lake Ice", "Glace de lac mince"})
+    theDict.Add(4, {5, 5, "Medium Lake Ice", "Glace de lac moyenne"})
+    theDict.Add(5, {7, 7, "Thick Lake Ice", "Glace de lac épaisse"})
+  
+    '========================================================  
+    'note I'm including very thick lake ice, but it probably
+    'won't show up any time due to the code only being used
+    'consistently after 1982 (egg code)
+    '========================================================  
+    
+    theDict.Add(6, {10, 10, "Very Thick Lake Ice", "Glace de lac très épaisse"})
+    theDict.Add(7, {17, 17, "Fast Ice", "Banquise côtière"})
+    theDict.Add(8, {123, 123, "No Data", "Aucunes données"})
+    theDict.Add(9, {400, 900, "Land", "Terre"})
+  else
+    theDict = Dictionary.Make(12)
+    theDict.Add(1, {0, 0, "Open or Bergy Water", "Eau libre ou bergée"})
+    theDict.Add(2, {1, 2, "New Ice", "Glace nouvelle"})
+    theDict.Add(3, {3, 4, "Grey Ice", "Glace grise"})
+    theDict.Add(4, {5, 5, "Grey-White Ice", "Glace blanchâtre"})
+    theDict.Add(5, {6, 6, "First-Year Ice", "Glace de première année"})
+    theDict.Add(6, {7, 9, "Thin First-Year Ice", "Glace mince de première année"})
+    theDict.Add(7, {10,10, "Medium First-Year Ice", "Glace moyenne de première année"})
+    theDict.Add(8, {11, 11, "Thick First-Year Ice", "Glace épaisse de première année"})
+  
+    '========================================================  
+    'note I'm plopping bergs into old ice here
+    '========================================================  
+    
+    theDict.Add(9, {12, 15, "Old Ice", "Vieille glace"})
+    theDict.Add(10, {16, 17, "Fast Ice", "Banquise côtière"})
+    theDict.Add(11, {123, 123, "No Data", "Aucunes données"})
+    theDict.Add(12, {400, 900, "Land", "Terre"})
+  end
+elseif(dictRequest = "concentration") then
+
+  '========================================================  
+  'key from 1 to n, startVal, endVal, englishAttribute,
+  'frenchAttribute
+  '========================================================  
+
+  theDict = Dictionary.Make(9)
+  theDict.Add(1, {0, 0, "Less Than 1/10", "Moins de 1/10"})
+  theDict.Add(2, {1, 3, "1 - 3/10", "1 - 3/10"})
+  theDict.Add(3, {4, 6, "4 - 6/10", "4 - 6/10"})
+  theDict.Add(4, {7, 8, "7 - 8/10", "7 - 8/10"})
+  theDict.Add(5, {9, 10, "9 - 9+/10", "9 - 9+/10"})
+  theDict.Add(6, {11, 11, "10/10", "10/10"})
+  theDict.Add(7, {-1, -1, "Trace", "Trace"})
+  theDict.Add(8, {123, 123, "No Data", "Aucunes données"})
+  theDict.Add(9, {400, 900, "Land", "Terre"})
+elseif(dictRequest = "frequency") then
+
+  '========================================================  
+  'key from 1 to n, startVal, endVal, englishAttribute,
+  'frenchAttribute
+  '========================================================  
+
+  theDict = Dictionary.Make(10)
+  theDict.Add(1, {0, 0, "0%", "0%"})
+  theDict.Add(2, {1, 15, "1 - 15%", "1 - 15%"})
+  theDict.Add(3, {16, 33, "16 - 33%", "16 - 33%"})
+  theDict.Add(4, {34, 50, "34 - 50%", "34 - 50%"})
+  theDict.Add(5, {51, 66, "51 - 66%", "51 - 66%"})
+  theDict.Add(6, {67, 84, "67 - 84%", "67 - 84%"})
+  theDict.Add(7, {85, 99, "85 - 99%", "85 - 99%"})
+  theDict.Add(8, {100, 100, "100%", "100%"})
+  theDict.Add(9, {123, 123, "No Data", "Aucunes données"})
+  theDict.Add(10, {400, 900, "Land", "Terre"})
+elseif(dictRequest = "departure") then
+
+  '========================================================  
+  'key from 1 to n, startVal, endVal, englishAttribute,
+  'frenchAttribute
+  '========================================================  
+
+  theDict = Dictionary.Make(12)
+  theDict.Add(1, {9000, 9000, "Land", "Terre"})
+  theDict.Add(2, {101, 8999, "No data", "Aucunes données"})
+  theDict.Add(3, {90, 100, "+ 9 to 10/10", "+ 9 à 10/10"})
+  theDict.Add(4, {70, 89, "+ 7 to 8/10", "+ 7 à 8/10"})
+  theDict.Add(5, {40, 69, "+ 4 to 6/10", "+ 4 à 6/10"})
+  theDict.Add(6, {10, 39, "+ 1 to 3/10", "+ 1 à 3/10"})
+  theDict.Add(7, {-9, 9, "0", "0"})
+  theDict.Add(8, {-39, -10, "- 1 to 3/10", "- 1 à 3/10"})
+  theDict.Add(9, {-69, -40, "- 4 to 6/10", "- 4 à 6/10"})
+  theDict.Add(10, {-89, -70, "- 7 to 8/10", "- 7 à 8/10"})
+  theDict.Add(11, {-100, -90, "- 9 to 10/10", "- 9 à 10/10"})
+  theDict.Add(12, {-9000, -101, "No data", "Aucunes données"})
+else
+  theDict = Dictionary.Make(0)
+end
+
+return theDict

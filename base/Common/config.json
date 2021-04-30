@@ -1,0 +1,72 @@
+{
+  "purpose": "config file for base chart creation",
+
+  "projectid": 1332,
+  "logfile": "Basechart_{}_{}.log",
+  "logdir": ["c:\\", "cis", "user_data", "{0}", "logs"],
+  "tmpdir": ["c:\\", "cis", "user_data", "{0}", "temp"],
+
+  "wkt": ["Data", "wgs_1984_lambert_conformal_conic.wkt"],
+
+  "filenames": {
+    "ctmed": "{}_ctmed{}", 
+    "cpmed": "{}_cpmed{}",
+    "oimed": "{}_oimed{}",
+    "prmed": "{}_prmed{}",
+    "icfrq": "{}_icfrq{}",
+    "oifrq": "{}_o{}frq{}",
+    "ctfup": "{}_freezeup_2_week",
+    "breakup": "{}_breakup_2_week"
+  },
+
+  "AR": {
+    "projection": -100,
+    "aoi": ["Data", "bnds", "ar_atlas_lcc100.shp"]
+  },
+
+  "EA": {
+    "projection": -100,
+    "aoi": ["Data", "bnds", "ea_atlas_lcc100.shp"]
+  },
+  
+  "HB": {
+    "projection": -100,
+    "aoi": ["Data", "bnds", "hb_atlas_lcc100.shp"]
+  },
+
+  "WA": {
+    "projection": -100,
+    "aoi": ["Data", "bnds", "wa_atlas_lcc100.shp"]
+  },
+  
+  "GL": {
+    "projection": -100,
+    "aoi": ["Data", "bnds", "gl_atlas_lcc100.shp"]
+  },
+  
+  "EC": {
+    "projection": -100,
+    "aoi": ["Data", "bnds", "ec_atlas_lcc100.shp"]
+  },
+
+  "constants": {
+    "water": 0,
+    "land": 900,
+    "nodata": 123,
+    "burn_field": "burn",
+    
+    "chunk": 20,
+    "pixel_size": 1000,
+    "expand": 200000
+  },
+
+  "ctfup" : {"EC":      ["1204","1218","0101","0115","0129","0212","0226","0312"],
+             "GL":      ["1218","0101","0115","0129","0212","0226"],
+             "default": ["0910","0924","1008","1022","1105","1119","1204"]
+  },
+  
+  "breakup":  {"EC":      ["0625","0611","0528","0514","0430","0416","0402","0319"],
+               "GL":      ["0430","0416","0402","0319","0305"],
+               "default": ["0910","0827","0813","0730","0716","0702","0618","0604"]
+  }
+}

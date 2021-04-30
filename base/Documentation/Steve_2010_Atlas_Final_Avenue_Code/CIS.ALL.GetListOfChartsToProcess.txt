@@ -1,0 +1,281 @@
+'==========================================================
+'Script Name: CIS.ALL.GetListOfChartsToProcess
+'
+'Purpose: This script will populate a list of SrcName objects
+'         that point to temporary shapefiles to be used for
+'         climatological processing. The list will be composed of:
+'           1. all input charts that are valid to use
+'           2. any designated substitutions for missing data
+'           3. assumes ice-free for EC/GL if missing and inserts
+'              the appropriate number of ice free charts.
+'
+'Files Required: _cisDBDir\data.dbf
+'                _cisRefDir\missing_charts.dbf
+'
+'Scripts Required: CIS.ALL.ImportCov
+'                  CIS.ALL.MakeIceFreeShapefile
+'
+'Global Variables: _cisDBDir
+'                  _cisRefDir
+'
+'Original Author: Steve McCourt (CIS)
+'
+'Original Script Date: 20-JUL-2010
+'
+'Objects Received: the STRING object theRegion
+'                  the STRING object histDate
+'                  the LIST object yearList
+'
+'Objects Returned: the NUMBER object possibleCharts
+'                  the NUMBER object availableCharts
+'                  the NUMBER object missingCharts
+'                  the NUMBER object substituteCharts
+'                  the LIST object srcnameList
+'                                       
+'Modifications/Date/Author: 05-NOV-2010, Steve McCourt
+'                             -the available charts was not
+'                              being computed correctly
+'                             -it now reports the # of charts
+'                              from data.dbf PLUS the # of
+'                              subs from missing*.dbf
+'                             -it was incorrectly adding subs
+'                              to the number of years
+'==========================================================
+
+theRegion = Self.Get(0).UCase
+histDate = Self.Get(1)
+yearList = Self.Get(2)
+
+importDir = _cisTmpDir+"\import_tmp"
+if(File.Exists(FileName.Make(importDir)).Not) then
+  cmdStr = "mkdir"++importDir
+  av.Run("CIS.ALL.RunDosCmd", {cmdStr})   
+end
+
+'======================================================
+'create our srcnameList and importDict now
+'  srcnameList is what will be returned
+'  importDict will hold the input e00 path and an
+'    associated coverage name, for non-missing e00s,
+'    it's the name of the e00, for missing, it will be
+'    rg_sub_01, rg_sub_02, etc., and for assumed 
+'    ice free, it will be rg_if_01, rg_if_02, etc.
+'======================================================
+
+missingCharts = 0
+possibleCharts = yearList.Count
+substituteCharts = 0
+availableCharts = 0
+
+srcnameList = {}
+importDict = Dictionary.Make(yearList.Count)
+    
+'======================================================
+'get the initial list of e00 export files from data.dbf
+'======================================================
+
+theFN = FileName.Make(_cisDBDir+"\data.dbf")
+dataVtab = VTab.Make(theFN, False, False)
+dataBitmap = dataVTab.GetSelection
+
+pathFld = dataVTab.FindField("Path")
+filenameFld = dataVTab.FindField("Filename")
+extFld = dataVTab.FindField("Extension")
+
+'======================================================
+'loop through all the years in the list then query
+'data.dbf for any and all source charts
+'======================================================   
+
+for each aYear in yearList
+  qryStr = "(([Rg] = "+theRegion.Quote+") and"++
+            "([Hist_date] = "+histdate.Quote+") and"++
+            "([Season_num] = "+ aYear.AsString+") and"++
+            "([Use_chart] = ""y""))"
+  
+  dataVTab.Query(qryStr, dataBitmap, #VTAB_SELTYPE_NEW)
+  dataBitmap = dataVTab.GetSelection
+  
+  if(dataBitmap.Count > 0) then
+    availableCharts = availableCharts + 1
+    dataBit = dataBitmap.GetNextSet(-1)
+    pathVal = dataVTab.ReturnValue(pathFld, dataBit)
+    filenameVal = dataVTab.ReturnValue(filenameFld, dataBit)
+    extVal = dataVTab.ReturnValue(extFld, dataBit)
+    
+    if(extVal.Left(1) <> ".") then
+      extVal = "."+extVal
+    end
+    
+    e00Str = pathVal+filenameVal+extVal
+
+    '==================================================    
+    'when importing here, we will use the e00 name, later
+    'we will customize output names if necessary
+    '==================================================
+        
+    importDict.Add(aYear, {e00Str, filenameVal})
+  end 'dataBitmap > 0
+end 'dataVTab aYear
+
+'======================================================
+'now check for any pre-determined substitute charts and
+'add them to the dictionary
+'======================================================
+
+theFN = FileName.Make(_cisDBDir+"\missing_charts.dbf")
+missingVTab = VTab.Make(theFN, False, False)
+missingBitmap = missingVTab.GetSelection    
+subchartFld = missingVTab.FindField("Sub_chart")    
+
+'======================================================
+'loop through all the years and query missing_charts.dbf
+'======================================================
+
+dummy = 0
+for each aYear in yearList
+  qryStr = "(([Rg] = "+theRegion.Quote+") and"++
+            "([Hist_date] = "+histdate.Quote+") and"++
+            "([Miss_year] = "+ aYear.AsString+"))"
+
+  missingBitmap = missingVTab.GetSelection
+  missingVTab.Query(qryStr, missingBitmap, #VTAB_SELTYPE_NEW)
+  missingBit = missingBitmap.GetNextSet(-1)
+  subchartFld = missingVTab.FindField("Sub_chart")
+
+  '====================================================
+  'now query data.dbf to get the path and filename info
+  '====================================================
+  
+  if(missingBitmap.Count > 0) then
+    subchartVal = missingVTab.ReturnValue(subchartFld, missingBit)
+    qryStr = "([Filename] = "++subchartVal.Quote++")"
+    dataBitmap = dataVTab.GetSelection
+    dataVTab.Query(qryStr, dataBitmap, #VTAB_SELTYPE_NEW)
+    if(dataBitmap.Count > 0) then
+      substituteCharts = substituteCharts + 1    
+      dummy = dummy + 1
+      dataBit = dataBitmap.GetNextSet(-1)
+      pathVal = dataVTab.ReturnValue(pathFld, dataBit)
+      filenameVal = dataVTab.ReturnValue(filenameFld, dataBit)
+      extVal = dataVTab.ReturnValue(extFld, dataBit)
+
+      if(extVal.Left(1) <> ".") then
+        extVal = "."+extVal
+      end
+      
+      e00Str = pathVal+filenameVal+extVal
+      
+      '================================================
+      'if statement below is for creating zero-padding
+      '================================================  
+          
+      if(dummy.AsString.Trim.Count = 1) then
+        importDict.Add(aYear, {e00Str, theRegion.LCase+"_sub_0"+dummy.AsString.Trim})
+      else
+        importDict.Add(aYear, {e00Str, theRegion.LCase+"_sub_"+dummy.AsString.Trim})
+      end 'end dummy       
+    end 'dataBitmap.Count
+  end 'missingBitmap.Count
+end 'missingVTab aYear
+
+'======================================================
+'import all e00s to cov then convert to shapefile
+'======================================================
+
+for each aKey in importDict.ReturnKeys
+  e00Str = (importDict.Get(aKey)).Get(0)
+  outCov = (importDict.Get(aKey)).Get(1)
+  
+  covStr = av.Run("CIS.ALL.ImportCov", {e00Str, importDir, outCov})
+
+  '====================================================
+  'now convert to shapefile
+  '====================================================
+  
+  covFTab = FTab.Make(SrcName.Make(covStr++"polygon"))      
+  theFTab = covFTab.ExportClean(FileName.Make(covStr+".shp"), False)
+  ftabSrcName = theFTab.GetSrcName
+  srcnameList.Add(ftabSrcName)
+  covFTab.Deactivate      
+  theFTab.Deactivate
+end 'each key in importDict
+
+
+'======================================================
+'finally if we are EC or GL, insert any assumed ice free
+'charts now based on the total possible
+'====================================================== 
+
+missingCharts = possibleCharts - (substituteCharts + availableCharts)
+icefreeCharts = missingCharts
+availableCharts = substituteCharts + availableCharts
+
+if((theRegion = "EC") or (theRegion = "GL")) then
+  if(missingCharts > 0) then
+    '====================================================
+    'we cant trust that we will have at least 1 data object
+    'in our dictionary, so grab the first chart in data.dbf
+    '====================================================
+    
+    qryStr = "([Rg] = "+theRegion.Quote+")"
+    dataBitmap = dataVTab.GetSelection
+    dataVTab.Query(qryStr, dataBitmap, #VTAB_SELTYPE_NEW)
+    dataBit = dataBitmap.GetNextSet(-1)
+    pathVal = dataVTab.ReturnValue(pathFld, dataBit)
+    filenameVal = dataVTab.ReturnValue(filenameFld, dataBit)
+    extVal = dataVTab.ReturnValue(extFld, dataBit)
+
+    if(extVal.Left(1) <> ".") then
+      extVal = "."+extVal
+    end
+    
+    e00Str = pathVal+filenameVal+extVal
+    covStr = av.Run("CIS.ALL.ImportCov", {e00Str, importDir,theRegion+"_if_00"})
+      
+    '====================================================
+    'now convert to shapefile
+    '====================================================
+    
+    covFTab = FTab.Make(SrcName.Make(covStr++"polygon"))      
+    theFTab = covFTab.ExportClean(FileName.Make(covStr+".shp"), False)
+    inSrcName = theFTab.GetSrcName  
+    outFN = inSrcName.AsString.AsFileName
+  
+    '====================================================
+    'now create the ice free chart and add it for each
+    'designated ice free chart
+    '====================================================      
+    
+    av.Run("CIS.STATS.MakeIceFreeShapefile", {inSrcName, outFN}) 
+    
+    if(icefreeCharts > 0) then         
+      for each i in 1..icefreeCharts
+        theSrcName = SrcName.Make(outFN.AsString)
+        srcnameList.Add(theSrcName)
+      end 'for each i in icefreeCharts
+    end 'icefreeCharts > 0
+  end 'missingCharts > 0
+end 'theRegion ec gl
+
+'====================================================== 
+'cleanup
+'====================================================== 
+
+theFTab.Deactivate
+theFTab = nil
+covFTab.Deactivate
+covFTab = nil
+dataVTab.Deactivate
+dataVTab = nil
+dataBitmap = nil
+missingVTab.Deactivate
+missingVTab = nil
+missingBitmap = nil
+importDict.Empty
+importDict = nil
+
+av.PurgeObjects
+
+return {possibleCharts, availableCharts, missingCharts, 
+  substituteCharts, srcnameList}

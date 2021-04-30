@@ -1,0 +1,575 @@
+'==========================================================
+'Script Name: CIS.STATS.ConcWhenIcePresent
+'
+'Purpose: This will calculate the concentration
+'         when ice is present given a set of ftabs. This is
+'         similar to the predominant ice type when ice is
+'         present and will ignore all cases where there was
+'         no ice present.
+'
+'         Assumes all input data are LCC100 projection.
+'
+'         The script will write the grid to disk using the
+'         outFileName variable.  This allows for resetting
+'         of the Spatial Analyst Extension without passing
+'         any GRID objects
+'          
+'
+'Files Required: none
+'
+'Scripts Required: CIS.ALL.AddPredomToFtab
+'
+'Global Variables: _cisRefDir
+'
+'Original Author: Steve McCourt (CIS)
+'
+'Original Script Date: 05-MAR-2003
+'
+'Objects Received: the LIST object ftabsrcnameList
+'                  the NUMBER object outcellSize
+'                  the STRING object theRegion
+'                  the STRING/FILENAME object outFileName
+'
+'Objects Returned: None
+'                                       
+'Modifications/Date/Author: 
+'==========================================================
+
+ftabsrcnamelist = Self.Get(0)
+outcellSize = Self.Get(1)
+theRegion = (Self.Get(2)).LCase
+outFileName = Self.Get(3)
+
+if(outFileName.Is(String)) then
+  outFileName = outFileName.AsFileName
+elseif(outFileName.Is(SrcName)) then
+  outFileName = outFileName.AsString.AsFileName
+end
+
+Grid.SetAnalysisCellSize(#GRID_ENVTYPE_VALUE, outcellSize)
+
+'==========================================================
+'now set the analysis extent for our grids
+'==========================================================
+
+bndSrcName = SrcName.Make(_cisRefDir+"\shapefiles\bnds\"+theRegion+
+  "_atlas_lcc100"+".shp")  
+
+'==========================================================
+'just in case there is more than one shape in the bnd,
+'union all the shapes
+'==========================================================
+
+bndFTab = FTab.Make(bndSrcName)
+bndshpFld = bndFTab.FindField("Shape")
+
+totShp = bndFTab.ReturnValue(bndshpFld, 0)
+
+if(bndFTab.GetNumRecords > 1) then
+  for each rec in 1..(bndFTab.GetNumRecords - 1)
+    shp = bndFTab.ReturnValue(bndshpFld, rec)
+    totShp = totShp.ReturnUnion(shp)
+  end
+end
+
+bndFTab.Deactivate
+bndFTab = nil
+
+totshpExtent = totShp.ReturnExtent
+llx = (((totshpExtent.GetLeft) / outcellSize).Round) * outcellSize
+lly = (((totshpExtent.GetBottom) / outcellSize).Round) * outcellSize
+urx = (((totshpExtent.GetRight) / outcellSize).Round) * outcellSize
+ury = (((totshpExtent.GetTop) / outcellSize).Round) * outcellsize
+
+Grid.SetAnalysisExtent(#GRID_ENVTYPE_VALUE, Rect.MakeXY(llx,lly,urx,ury))
+
+'==========================================================
+'ensure the concentration is set in the FTabs now
+'==========================================================
+
+ftabList = {}
+for each asrcname in ftabsrcnameList
+  theFTab = FTab.Make(asrcname)
+  concFld = theFTab.FindField("Conc")
+  nctFld = theFTab.FindField("N_ct")
+  pnttypeFld = theFTab.FindField("Pnt_type")
+  if(concFld = nil) then
+    concFld = Field.Make("Conc", #FIELD_DECIMAL, 3, 0)
+    theFTab.SetEditable(True)
+    theFTab.AddFields({concFld})
+    saveEdits = True
+    theFTab.SetEditable(False)
+    concFld = theFTab.FindField("Conc")
+  end
+    
+  'now compute the field
+  'land
+  qryStr = "(([Pnt_type] = 400) or ([Pnt_type] = 900))"
+  theBitmap = theFTab.GetSelection
+  theFTab.Query(qryStr, theBitmap, #VTAB_SELTYPE_NEW)
+  if(theBitmap.Count > 0) then
+    theFTab.Calculate("900", concFld)
+  end
+  
+  'nodata
+  qryStr = "(([Pnt_type] = 123) or ([Pnt_type] = 128) or"++
+    "([Pnt_type] = 133) or ([Pnt_type] = 143) or ([Pnt_type] = 147))"
+  theBitmap = theFTab.GetSelection
+  theFTab.Query(qryStr, theBitmap, #VTAB_SELTYPE_NEW)
+  if(theBitmap.Count > 0) then
+    theFTab.Calculate("123", concFld)
+  end
+  
+  'open water, bergy water, ice free
+  qryStr = "(([Pnt_type] = 101) or ([Pnt_type] = 107) or"++
+    "([Pnt_type] = 115))"
+  theBitmap = theFTab.GetSelection
+  theFTab.Query(qryStr, theBitmap, #VTAB_SELTYPE_NEW)
+  if(theBitmap.Count > 0) then
+    theFTab.Calculate("0", concFld)
+  end
+  
+  'ice
+  qryStr = "(([Pnt_type] >= 117) and ([Pnt_type] <= 122))"
+  theBitmap = theFTab.GetSelection
+  theFTab.Query(qryStr, theBitmap, #VTAB_SELTYPE_NEW)
+  if(theBitmap.Count > 0) then
+    theFTab.Calculate("[N_ct].AsNumber", concFld)
+  end
+  
+  'ice (9+/10 needs to be 10 here)
+  qryStr = "([N_ct].AsNumber = 9.7)"
+  theBitmap = theFTab.GetSelection
+  theFTab.Query(qryStr, theBitmap, #VTAB_SELTYPE_NEW)
+  if(theBitmap.Count > 0) then
+    theFTab.Calculate("10", concFld)
+  end
+
+  'ice (10/10 needs to be 11 here)
+  qryStr = "([N_ct].AsNumber = 10.0)"
+  theBitmap = theFTab.GetSelection
+  theFTab.Query(qryStr, theBitmap, #VTAB_SELTYPE_NEW)
+  if(theBitmap.Count > 0) then
+    theFTab.Calculate("11", concFld)
+  end  
+  
+  'fast ice (remember 10/10 is 11 here)
+  qryStr = "([Pnt_type] = 106)"
+  theBitmap = theFTab.GetSelection
+  theFTab.Query(qryStr, theBitmap, #VTAB_SELTYPE_NEW)
+  if(theBitmap.Count > 0) then
+    theFTab.Calculate("11", concFld)
+  end
+  
+  'ice shelves
+  qryStr = "([Pnt_type] = 146)"
+  theBitmap = theFTab.GetSelection
+  theFTab.Query(qryStr, theBitmap, #VTAB_SELTYPE_NEW)
+  if(theBitmap.Count > 0) then
+    theFTab.Calculate("11", concFld)
+  end  
+  
+  saveEdits = true
+  theFTab.SetEditable(false)
+  ftabList.Add(theFTab)
+  theFTab.Deactivate
+end
+
+av.PurgeObjects
+
+'==========================================================
+'now we will convert all ice concentrations to a grid for each
+'ftab so we may determine number of observations of
+'each concentration value
+'also, "ic" will keep count of the number of
+'observations of ice for determining the median
+'position for each cell at the end
+'==========================================================
+
+iceconcList = {"ic", 1,2,3,4,5,6,7,8,9,10,11}
+
+for each iceconc in iceconcList
+  '======================================================   
+  'this is based off of the predom when ice present, so
+  'theres some redundant stuff here like this...
+  '======================================================   
+  values = {iceconc}
+
+  firstTime = True
+
+  for each theftab in ftabList
+    concFld = theftab.FindField("Conc")
+    
+    '======================================================      
+    'since regional extents vary over time, we expand the
+    'analysis extent by 200km (200,000m) to capture all
+    'input data and get rid of any no data issues that
+    'negate any processing within them
+    '======================================================      
+    
+    gridExtent = ((FTheme.Make(theftab)).ReturnExtent).ExpandBy(200000)
+
+    '======================================================      
+    'now ensure that all grid origins begin at a multiple
+    'of the cellsize, otherwise, cells can be misaligned
+    '======================================================      
+    
+    llx = gridExtent.GetLeft
+    lly = gridExtent.GetBottom
+    
+    llx = ((llx / outcellSize).Floor) * outcellSize
+    lly = ((lly / outcellSize).Floor) * outcellSize
+    
+    gridExtent.SetOrigin(llx@lly)  
+    gridParams = {outcellSize, gridExtent}    
+    
+    g1 = Grid.MakeFromFTab(theftab, Prj.MakeNull, concFld, 
+          gridParams)
+          
+    '======================================================      
+    'NOTE: all buildSTA and purgeObjects requests are
+    'done to ensure memory is cleaned up and temp grids
+    'are written to disk instead of in memory
+    '======================================================      
+          
+    g1.BuildSTA
+
+    '======================================================
+    'for the east coast, we need to add a zero layer because
+    'if the extent isn't full (1968/69 to 1997/98) then ice
+    'beyond the extent will be forced to nodata
+    '======================================================
+
+    if(theRegion = "ec") then
+      bndSrcName = SrcName.Make(_cisRefDir+"\shapefiles\bnds\ec_atlas_lcc100.shp")
+      bndFTab = FTab.Make(bndSrcName)
+      tmpFld = bndFTab.FindField("Tmp")
+      if(tmpFld = nil) then        
+        tmpFld = Field.Make("Tmp", #FIELD_DECIMAL, 1, 0)
+        bndFTab.SetEditable(True)      
+        bndFTab.AddFields({tmpFld})
+        saveEdits = True
+        bndFTab.SetEditable(False)
+        tmpFld = bndFTab.FindField("Tmp")
+      end    
+      
+      '====================================================      
+      'again, ensure constant grid extents/origins
+      '====================================================      
+      
+      gridExtent = ((FTheme.Make(bndFTab)).ReturnExtent).ExpandBy(200000)
+      
+      llx = gridExtent.GetLeft
+      lly = gridExtent.GetBottom
+      
+      llx = ((llx / outcellSize).Floor) * outcellSize
+      lly = ((lly / outcellSize).Floor) * outcellSize
+      
+      gridExtent.SetOrigin(llx@lly)          
+      gridExtent = (FTheme.Make(bndFTab)).ReturnExtent
+      gridParams = {outcellSize, gridExtent}
+      zerogrid = Grid.MakeFromFTab(bndFTab, Prj.MakeNull, tmpFld,
+        gridParams)
+      g2 = g1.Merge({zerogrid})
+      bndFTab.SetEditable(True)
+      bndFTab.RemoveFields({tmpFld})
+      saveEdits = True
+      bndFTab.SetEditable(False)      
+      bndFTab.Deactivate     
+      g1 = nil
+      g1 = g2
+      g1.BuildSTA 
+      av.PurgeObjects      
+    end  
+
+    '======================================================      
+    'now we need to be careful because charts can have no 
+    'data holes in them (Arctic for example), so to alleviate 
+    'this we will merge the entire grid with a 123 layer - 
+    'this also fixes the the no processing in nodata areas and 
+    'allows us to have real frequencies based on the number 
+    'of real observations
+    '
+    'no data is 123, ice is 1, no ice is 0
+    '======================================================      
+  
+    g2 = (g1.IsNull).Con(123.AsGrid, g1) 
+    g2.BuildSTA
+
+    if(firstTime) then
+      '====================================================    
+      'initialize numobsGrid 
+      '====================================================
+
+      zeroGrid = g2 * 0.AsGrid
+      zeroGrid.BuildSTA
+      numobsGrid = zeroGrid
+      numobsGrid.BuildSTA
+      firstTime = False
+    end
+    
+    '======================================================    
+    'initialize valGrid now - for "ic" we just want ice,
+    'not land/nodata/noice, otherwise, we cycle through the
+    'possible values in "values"
+    'SM 07-MAY-2010, there's a better way to do this, but
+    'lets stick with what works
+    '======================================================    
+    
+    if(iceconc = "ic") then
+      valGrid = ((g2 >= 1.AsGrid) and (g2 <= 11.AsGrid)) 
+      valGrid.BuildSTA   
+    else
+      valGrid = zeroGrid    
+      valGrid.BuildSTA
+      for each val in values
+        valGrid = (valGrid or (g2 = val.AsGrid))
+        valGrid.BuildSTA
+      end
+    end    
+
+    numobsGrid = numobsGrid + valGrid
+    numobsGrid.BuildSTA
+    theftab.Deactivate
+    g2 = nil
+    valGrid = nil
+    av.PurgeObjects
+  end
+
+  '========================================================
+  'now set the appropriate grid based on the icetype
+  '========================================================
+
+  if(iceconc = "ic") then
+    icGrid = numobsGrid 
+    icGrid.BuildSTA
+  elseif(iceconc = 1) then
+    c01Grid = numobsGrid
+    c01Grid.BuildSTA
+  elseif(iceconc = 2) then
+    c02Grid = numobsGrid
+    c02Grid.BuildSTA    
+  elseif(iceconc = 3) then
+    c03Grid = numobsGrid
+    c03Grid.BuildSTA    
+  elseif(iceconc = 4) then
+    c04Grid = numobsGrid
+    c04Grid.BuildSTA   
+  elseif(iceconc = 5) then
+    c05Grid = numobsGrid
+    c05Grid.BuildSTA   
+  elseif(iceconc = 6) then
+    c06Grid = numobsGrid
+    c06Grid.BuildSTA    
+  elseif(iceconc = 7) then
+    c07Grid = numobsGrid
+    c07Grid.BuildSTA      
+  elseif(iceconc = 8) then
+    c08Grid = numobsGrid
+    c08Grid.BuildSTA    
+  elseif(iceconc = 9) then
+    c09Grid = numobsGrid
+    c09Grid.BuildSTA      
+  elseif(iceconc = 10) then
+    c10Grid = numobsGrid
+    c10Grid.BuildSTA    
+  elseif(iceconc = 11) then
+    c11Grid = numobsGrid
+    c11Grid.BuildSTA
+  end
+  
+  numobsGrid = nil
+  av.PurgeObjects
+end  
+
+'==========================================================
+'now get the median position to pick from
+'we do this by condition checking the result of the
+'integer remainder of the number of observations of ice
+'divided by 2, if the number of obs is odd, simply
+'divide by 2 (GRID will truncate the 0.5) otherwise,
+'add 2 to the number of obs and divide by 2 thus
+'pulling the middle position up one (this is how
+'medians have always been done at CIS
+'==========================================================
+
+midposGrid = (icGrid % 2.AsGrid).Con(((icGrid + 1) / 2.AsGrid), ((icGrid + 2.AsGrid) / 2.AsGrid))
+midposGrid.BuildSTA
+
+'==========================================================
+'now we calculate the median concentration, this is
+'accomplished by checking if the number of occurences of the
+'lowest concentration are >= the middleposition, if yes, set the
+'icetype, if not, keep checking the higher concentrations by
+'consecutively summing the number of occurences until we
+'have a median concentration, if nothing is found, it must
+'be no ice, or zero
+'
+'apparently, spatial analyst doesnt like when you nest a crazy
+'amount of calculations, the lines below get rid of this...
+'  uh, be sure to sum from largest to smallest as below, 
+'  otherwise, num of obs will accumulate with each summation
+'  ... glad i caught that ;)
+'==========================================================
+'
+c11Grid = c01Grid + c02Grid + c03Grid + c04Grid + c05Grid + c06Grid + c07Grid + c08Grid + c09Grid + c10Grid + c11Grid
+c10Grid = c01Grid + c02Grid + c03Grid + c04Grid + c05Grid + c06Grid + c07Grid + c08Grid + c09Grid + c10Grid
+c09Grid = c01Grid + c02Grid + c03Grid + c04Grid + c05Grid + c06Grid + c07Grid + c08Grid + c09Grid
+c08Grid = c01Grid + c02Grid + c03Grid + c04Grid + c05Grid + c06Grid + c07Grid + c08Grid
+c07Grid = c01Grid + c02Grid + c03Grid + c04Grid + c05Grid + c06Grid + c07Grid
+c06Grid = c01Grid + c02Grid + c03Grid + c04Grid + c05Grid + c06Grid
+c05Grid = c01Grid + c02Grid + c03Grid + c04Grid + c05Grid
+c04Grid = c01Grid + c02Grid + c03Grid + c04Grid
+c03Grid = c01Grid + c02Grid + c03Grid
+c02Grid = c01Grid + c02Grid
+'
+'ct1Grid = (c01Grid >= midposGrid).Con(1.AsGrid,
+'            (c02Grid >= midposGrid).Con(2.AsGrid,
+'              (c03Grid >= midposGrid).Con(3.AsGrid,
+'                (c04Grid >= midposGrid).Con(4.AsGrid,
+'                  (c05Grid >= midposGrid).Con(5.AsGrid,
+'                    (c06Grid >= midposGrid).Con(6.AsGrid, 
+'                      (c07Grid >= midposGrid).Con(7.AsGrid,
+'                        (c08Grid >= midposGrid).Con(8.AsGrid, 
+'                          (c09Grid >= midposGrid).Con(9.AsGrid, 
+'                            (c10Grid >= midposGrid).Con(10.AsGrid, 
+'                              (c11Grid >= midposGrid).Con(11.AsGrid, 0.AsGrid)
+'                              )
+'                            )
+'                          )
+'                        )
+'                      )
+'                    )
+'                  )
+'                )
+'              )
+'            )
+
+
+'========================================================
+'initialize a zero grid
+'========================================================
+
+tmpGrid = c01Grid * 0
+
+''========================================================
+''if cXXGrid is GE to the median position, assign conc of XX
+''========================================================
+'
+'ct1Grid = (c01Grid >= midposGrid).Con(1.AsGrid,0.AsGrid)
+'
+''========================================================
+''now merge these values with the previous values by
+''setting zeros to NODATA
+''========================================================
+'
+'tmpGrid = ((ct1Grid = 0.AsGrid).SetNull(ct1Grid)).Merge({tmpGrid})
+'
+''========================================================
+''now concentrations 2 through 11
+''========================================================
+'
+'ct1Grid = (c02Grid >= midposGrid).Con(2.AsGrid,0.AsGrid)
+'tmpGrid = ((ct1Grid = 0.AsGrid).SetNull(ct1Grid)).Merge({tmpGrid})
+'ct1Grid = (c03Grid >= midposGrid).Con(3.AsGrid,0.AsGrid)
+'tmpGrid = ((ct1Grid = 0.AsGrid).SetNull(ct1Grid)).Merge({tmpGrid})
+'ct1Grid = (c04Grid >= midposGrid).Con(4.AsGrid,0.AsGrid)
+'tmpGrid = ((ct1Grid = 0.AsGrid).SetNull(ct1Grid)).Merge({tmpGrid})
+'ct1Grid = (c05Grid >= midposGrid).Con(5.AsGrid,0.AsGrid)
+'tmpGrid = ((ct1Grid = 0.AsGrid).SetNull(ct1Grid)).Merge({tmpGrid})
+'ct1Grid = (c06Grid >= midposGrid).Con(6.AsGrid,0.AsGrid)
+'tmpGrid = ((ct1Grid = 0.AsGrid).SetNull(ct1Grid)).Merge({tmpGrid})
+'ct1Grid = (c07Grid >= midposGrid).Con(7.AsGrid,0.AsGrid)
+'tmpGrid = ((ct1Grid = 0.AsGrid).SetNull(ct1Grid)).Merge({tmpGrid})
+'ct1Grid = (c08Grid >= midposGrid).Con(8.AsGrid,0.AsGrid)
+'tmpGrid = ((ct1Grid = 0.AsGrid).SetNull(ct1Grid)).Merge({tmpGrid})
+'ct1Grid = (c09Grid >= midposGrid).Con(9.AsGrid,0.AsGrid)
+'tmpGrid = ((ct1Grid = 0.AsGrid).SetNull(ct1Grid)).Merge({tmpGrid})
+'ct1Grid = (c10Grid >= midposGrid).Con(10.AsGrid,0.AsGrid)
+'tmpGrid = ((ct1Grid = 0.AsGrid).SetNull(ct1Grid)).Merge({tmpGrid})
+'ct1Grid = (c11Grid >= midposGrid).Con(11.AsGrid,0.AsGrid)
+'tmpGrid = ((ct1Grid = 0.AsGrid).SetNull(ct1Grid)).Merge({tmpGrid})
+
+
+
+
+
+
+
+'*************************TRY THIS***********************************
+'******************THIS WORKS GREAT**********************************
+ct1Grid = (c11Grid >= midposGrid).Con(11.AsGrid,0.AsGrid)
+tmpGrid = ((ct1Grid = 0.AsGrid).SetNull(ct1Grid)).Merge({tmpGrid})
+ct1Grid = (c10Grid >= midposGrid).Con(10.AsGrid,0.AsGrid)
+tmpGrid = ((ct1Grid = 0.AsGrid).SetNull(ct1Grid)).Merge({tmpGrid})
+ct1Grid = (c09Grid >= midposGrid).Con(9.AsGrid,0.AsGrid)
+tmpGrid = ((ct1Grid = 0.AsGrid).SetNull(ct1Grid)).Merge({tmpGrid})
+ct1Grid = (c08Grid >= midposGrid).Con(8.AsGrid,0.AsGrid)
+tmpGrid = ((ct1Grid = 0.AsGrid).SetNull(ct1Grid)).Merge({tmpGrid})
+ct1Grid = (c07Grid >= midposGrid).Con(7.AsGrid,0.AsGrid)
+tmpGrid = ((ct1Grid = 0.AsGrid).SetNull(ct1Grid)).Merge({tmpGrid})
+ct1Grid = (c06Grid >= midposGrid).Con(6.AsGrid,0.AsGrid)
+tmpGrid = ((ct1Grid = 0.AsGrid).SetNull(ct1Grid)).Merge({tmpGrid})
+ct1Grid = (c05Grid >= midposGrid).Con(5.AsGrid,0.AsGrid)
+tmpGrid = ((ct1Grid = 0.AsGrid).SetNull(ct1Grid)).Merge({tmpGrid})
+ct1Grid = (c04Grid >= midposGrid).Con(4.AsGrid,0.AsGrid)
+tmpGrid = ((ct1Grid = 0.AsGrid).SetNull(ct1Grid)).Merge({tmpGrid})
+ct1Grid = (c03Grid >= midposGrid).Con(3.AsGrid,0.AsGrid)
+tmpGrid = ((ct1Grid = 0.AsGrid).SetNull(ct1Grid)).Merge({tmpGrid})
+ct1Grid = (c02Grid >= midposGrid).Con(2.AsGrid,0.AsGrid)
+tmpGrid = ((ct1Grid = 0.AsGrid).SetNull(ct1Grid)).Merge({tmpGrid})
+ct1Grid = (c01Grid >= midposGrid).Con(1.AsGrid,0.AsGrid)
+tmpGrid = ((ct1Grid = 0.AsGrid).SetNull(ct1Grid)).Merge({tmpGrid})
+
+
+'*********************************************************************
+
+
+
+
+
+
+
+'========================================================
+'finally set the null areas to 0
+'========================================================
+
+ct1Grid = tmpGrid.IsNull.Con(0.AsGrid, tmpGrid)
+
+tmpGrid = nil
+midposGrid = nil
+av.PurgeObjects
+
+ct1Grid.BuildSTA
+                               
+'==========================================================
+'finally clip the grid to it's pre-defined extent
+'==========================================================
+
+outcentmer = -100
+tmpFileName = outFileName.ReturnDir
+ct1FN = (tmpFileName.AsString+"\ct1").AsFileName
+ct2FN = (tmpFileName.AsString+"\ct2").AsFileName
+
+doISIS = False
+
+ct1Grid.SaveDataSet(ct1FN)
+
+av.Run("CIS.ALL.ClipClimateGrid", {theRegion, 
+  ct1FN, outcentMer, ct2FN, doISIS})
+
+ctGrid = Grid.Make(Grid.MakeSrcName(ct2FN.AsString))
+
+ctGrid.BuildSTA
+ctGrid.SaveDataSet(outFileName)
+
+ct1Grid = nil
+ctGrid = nil
+
+'==========================================================
+'cleanup
+'==========================================================
+
+av.PurgeObjects
+Grid.DeleteDataSet(ct1FN)
+Grid.DeleteDataSet(ct2FN)

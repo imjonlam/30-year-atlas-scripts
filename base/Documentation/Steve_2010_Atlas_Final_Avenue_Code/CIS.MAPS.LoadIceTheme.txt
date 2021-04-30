@@ -1,0 +1,102 @@
+'==========================================================
+'Script Name: CIS.MAPS.LoadIceTheme
+'
+'Purpose: Loads an ice theme for map output.  The legend
+'         will be loaded based on the string iceproductStr. 
+'         IsisAtlas is used to specify colouring of nodata,
+'         atlas products no data is white, but isis uses
+'         either black or gray.
+'
+'Files Required: all required files in _cisRefDir
+'
+'Scripts Required: None
+'
+'Global Variables: _cisRefDir
+'
+'Original Author: Steve McCourt (CIS)
+'
+'Original Script Date: 16-MAY-2003
+'
+'Objects Received: the VIEW object theView
+'                  the STRING object theRegion
+'                  the STRING object thmObject
+'                  the STRING object srcnameStr
+'                  the STRING object iceproductStr
+'                  the BOOLEAN object isisAtlas
+'
+'Objects Returned: None
+'                                       
+'Modifications/Date/Author: 
+'==========================================================
+
+theView = Self.Get(0)
+theRegion = (Self.Get(1)).LCase
+thmObject = (Self.Get(2)).LCase
+srcnameStr = (Self.Get(3)).LCase
+iceproductStr = (Self.Get(4)).LCase
+isisLegend = Self.Get(5)
+
+if(thmObject = "ftheme") then
+  theThm = Theme.Make(srcnameStr.AsSrcName)
+  legendType = "shp"
+elseif(thmObject = "gtheme") then
+  theGrid = Grid.Make(Grid.MakeSrcName(srcnameStr))
+  theThm = GTheme.Make(theGrid)
+  legendType = "grid"
+end
+
+'==========================================================
+'this was with good intentions, but time is running out
+'to tweak the legend boxes....
+'==========================================================
+
+if(isisLegend) then
+  isisAtlas = "isis"
+else
+  'isisAtlas = "atlas"
+  isisAtlas = "isis"
+end
+
+'==========================================================
+'specify the correct legend now based on iceproductStr
+'==========================================================
+
+if(iceproductStr = "frequency") then
+  legendFN = (_cisRefDir+"\legends\"+
+    legendType+"_"+isisAtlas+"_frequency.avl").AsFileName
+elseif(iceproductStr = "concentration") then
+  legendFN = (_cisRefDir+"\legends\"+
+    legendType+"_"+isisAtlas+"_concentration.avl").AsFileName
+elseif(iceproductStr = "predominant") then
+  if(theRegion = "gl") then
+    legendFN = (_cisRefDir+"\legends\"+
+      legendType+"_"+isisAtlas+"_predominantlakeice.avl").AsFileName
+  else
+    legendFN = (_cisRefDir+"\legends\"+
+      legendType+"_"+isisAtlas+"_predominantseaice.avl").AsFileName
+  end
+elseif(iceproductStr = "departure") then
+  legendFN = (_cisRefDir+"\legends\"+
+    legendType+"_"+isisAtlas+"_departure.avl").AsFileName
+end
+
+theView.AddTheme(theThm)
+thmLegend = theThm.GetLegend
+thmLegend.Load(legendFN, #LEGEND_LOADTYPE_ALL)
+theThm.UpdateLegend
+
+'==========================================================
+'move the theme into index 3
+'==========================================================
+
+theThemes = theView.GetThemes
+
+'==========================================================
+'shuffle the theme to the fourth spot (since it belongs to
+'the list now)
+'==========================================================
+
+theThemes.Shuffle(theThm, 4)
+theThm.SetVisible(True)
+theView.InvalidateTOC(nil)
+theView.Invalidate

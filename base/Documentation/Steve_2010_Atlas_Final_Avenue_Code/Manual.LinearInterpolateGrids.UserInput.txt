@@ -1,0 +1,304 @@
+'==========================================================
+'Script Name: Manual.LinearInterpolateGrids.UserInput
+'
+'Purpose: Grabs user input for linearally interpolating
+'         grids.
+'         
+'Files Required: _cisDBDir\hist_date_lut.dbf
+'                _cisDBDir\climate_products_lut.dbf
+'
+'Scripts Required: None
+'
+'Global Variables: _cisDBDir
+'                  _cisTmpDir
+'
+'Original Author: Steve McCourt (CIS)
+'
+'Original Script Date: 08-APR-2011
+'
+'Objects Received: None
+'
+'Objects Returned: the STRING object theRegion
+'                  the STRING object theStat
+'                  the STRING object startHistDate
+'                  the STRING object endHistDate
+'                  the STRING object histDateToInterpolate
+'                  the NUMBER object interpolationIndex
+'                  the NUMBER object startYear
+'                  the NUMBER object endYear
+'                  the STRING object outDir
+'
+'Modifications/Date/Author: 
+'==========================================================
+
+
+'==========================================================
+'have the user choose a source region
+'==========================================================
+
+regionList = {"Arctic (WA/EA/HB)", "Eastern Coast", "Great Lakes"}
+              
+theRegion = msgBox.ChoiceAsString(regionList, 
+  "Choose region to analyse:", "Climate Products")
+  
+if(theRegion = nil) then
+  msgBox.Info("You didn't select anything!  Exiting.", "Whoops!")
+  exit
+end
+  
+if(theRegion = "Arctic (WA/EA/HB)") then
+  theRegion = "AR"
+elseif(theRegion = "Eastern Coast") then
+  theRegion = "EC"
+elseif(theRegion = "Great Lakes") then
+  theRegion = "GL"
+end
+
+'==========================================================
+'have the user choose the statistic to process (var is theStat)
+'==========================================================
+
+vtabFN = FileName.Make(_cisDBDir+"\climate_products_lut.dbf")
+theVTab = VTab.Make(vtabFN, False, False)
+
+theBitmap = theVTab.GetSelection
+
+if(theRegion = "GL") then
+  statType = "lake"
+else
+  statType = "sea"
+end
+
+qryStr = "(([Stat_type] = "+statType.Quote+") or "+
+          "([Stat_type] = ""all""))"
+          
+theVTab.Query(qryStr, theBitmap, #VTAB_SELTYPE_NEW)
+
+statidFld = theVTab.FindField("Stat_id")
+stattypeFld = theVTab.FindField("Stat_type")
+engline1Fld = theVTab.FindField("Eng_title1")
+engline2Fld = theVTab.FindField("Eng_title2")
+
+productDict = Dictionary.Make(theBitmap.Count)
+for each bit in theBitmap
+  theKey = theVTab.ReturnValue(statidFld, bit)
+
+  '========================================================
+  'don't offer the departure product here
+  '========================================================
+  
+  if(theKey.UCase = "DEPRT") then
+    continue
+  end
+  
+  theVal = theVTab.ReturnValue(engline1Fld, bit)
+  theVal = theVal++theVTab.ReturnValue(engline2Fld, bit)
+
+  '========================================================
+  'let's cleanup a bit so product names can be seen
+  '========================================================
+  
+  if(theVal.LCase.Contains("frequency")) then
+    theVal = theVal.LCase.Substitute("frequency", "frq.")
+  end
+  if(theVal.LCase.Contains("median")) then
+    theVal = theVal.LCase.Substitute("median", "med.")
+  end
+
+  '========================================================
+  'cleanup any sea ice/lake ice issues
+  '========================================================
+  
+  if(theRegion = "GL") then
+    if(theVal.LCase.Contains("sea ice")) then
+      theVal = theVal.LCase.Substitute("sea ice", "lake ice")
+    end
+  end
+  
+  theVal = theVal.Proper
+  productDict.Add(theKey, theVal)
+end
+
+theVTab.Deactivate
+theVTab = nil
+
+fullproductList = {}
+
+for each prodid in productDict.ReturnKeys
+  theVal = productDict.Get(prodid)
+  fullproductList.Add(theVal)
+end
+
+fullProduct = msgBox.ListAsString(fullproductList, 
+  "Choose the product to interpolate:", "Climate Products")
+  
+if(fullProduct = nil) then
+  msgBox.Info("You didn't select anything!  Exiting.", "Whoops!")
+  exit
+end
+
+for each prodid in productDict.ReturnKeys
+  theVal = productDict.Get(prodid)
+  if(theVal = fullProduct) then
+    theStat = prodid.UCase
+    break
+  end
+end
+
+productDict = nil
+
+'==========================================================
+'have the user choose the historic dates
+'==========================================================
+
+vtabFN = FileName.Make(_cisDBDir+"\hist_date_lut.dbf")
+theVTab = VTab.Make(vtabFN, False, False)
+
+'==========================================================
+'let the user choose the historic date to process
+'==========================================================
+
+histdateFld = theVTab.FindField("Hist_date")
+
+histDates = {}
+if((theRegion = "EC") or (theRegion = "GL")) then
+
+  '========================================================  
+  'we need to re-sort the historic dates to appear
+  'logical i.e. Nov/Dec to May/Jul so skip anything
+  'less than record 40 (Oct 01)
+  '========================================================
+  
+  for each r in theVTab
+    if(r < 39) then
+      continue
+    else      
+      theVal = theVTab.ReturnValue(histdateFld, r)
+      histDates.Add(theVal)
+    end
+  end
+  for each r in theVTab
+    if(r < 39) then
+      theVal = theVTab.ReturnValue(histdateFld, r)
+      histDates.Add(theVal)
+    else
+      continue
+    end
+  end
+else
+  for each r in theVTab
+    theVal = theVTab.ReturnValue(histdateFld, r)
+    histDates.Add(theVal)
+  end
+end
+
+theVTab.Deactivate
+theVTab = nil
+
+startHistDate = msgBox.ChoiceAsString(histDates, "Choose start historic date to interpolate:", 
+  "Choose Historic Dates To Process")
+  
+if(startHistDate = nil) then
+  msgBox.Info("You didn't select anything!  Exiting.", "Whoops!")
+  exit
+end
+  
+endHistDate = msgBox.ChoiceAsString(histDates, "Choose end historic date to interpolate:",
+  "Choose End Historic Date")
+
+if(endHistDate = nil) then
+  msgBox.Info("You didn't select anything!  Exiting.", "Whoops!")
+  exit
+end
+
+
+'==========================================================  
+'now have the user choose the date to be interpolated  
+'  will be simpler if we only return the dates between
+'  the selected historic dates
+'==========================================================
+
+addHistDate = False
+shortHistDateList = {}
+for each hd in histDates
+  if(hd = startHistDate) then
+    addHistDate = True
+    continue
+  end
+  if(hd = endHistDate) then
+    addHistDate = False
+  end
+  if(addHistDate) then
+    shortHistDateList.Add(hd)
+  end
+end
+  
+histDateToInterpolate = msgBox.ChoiceAsString(shortHistDateList, "Choose the date you"++
+  "want to interpolate:", "Choose Historic Date to Interpolate")
+
+if(histDateToInterpolate = nil) then
+  msgBox.Info("You didn't select anything!  Exiting.", "Whoops!")
+  exit
+end
+
+'==========================================================
+'return an index for the interpolation algorithm (will 
+'make things simpler in next script)
+'here's how this works:
+'  -linear interpolation equation works with the start date 
+'   (i.e. x-naught) equal to 0
+'  -get the index number from the short list and add 1 to it
+'   because we have removed the start and end dates so it's 
+'   now 0-based but we need to have the start date as index 0,
+'   so this is where the +1 comes into play
+'==========================================================
+
+interpolationIndex = shortHistDateList.FindByValue(histDateToInterpolate) + 1
+
+'==========================================================
+'we also need the total number of points that make the 
+'interpolation line, so compute this from our shortHistDateList
+'above by adding 2 for the start and end that we removed
+'from the list
+'==========================================================
+
+interpolationTotPoints = shortHistDateList.Count + 2
+
+'==========================================================
+'now start and end years 
+'==========================================================
+if(theRegion = "GL") then
+  yearRanges = {"1973-2002", "1981-2010"}
+else
+  yearRanges = {"1971-2000", "1981-2010"}
+end
+
+yearRange = msgBox.ChoiceAsString(yearRanges, "Choose the statistical period:", 
+  "Choose period")
+
+if(yearRange = nil) then
+  msgBox.Info("You didn't select anything!  Exiting.", "Whoops!")
+  exit
+end
+
+startYear = (yearRange.Left(4)).AsNumber
+endYear = (yearRange.Right(4)).AsNumber
+
+'==========================================================
+'now the output directory for grids
+'==========================================================
+
+outDir = "a"
+while (outDir.AsFileName.IsDir.Not)
+  outDir = msgBox.Input("Enter out directory for grids:",
+    "Output Directory", _cisTmpDir)
+  if(outDir = nil) then
+    msgBox.Info("You didn't select anything!  Exiting.", "Whoops!")
+  exit
+
+  end
+end
+
+return {theRegion, theStat, startHistDate, endHistDate, histDateToInterpolate, 
+  interpolationIndex, interpolationTotPoints, startYear, endYear, outDir}
+

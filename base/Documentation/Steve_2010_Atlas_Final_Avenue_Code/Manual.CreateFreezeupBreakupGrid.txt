@@ -1,0 +1,247 @@
+'will create a freezeup or breakup grid
+
+'==========================================================
+'have the user pick the region to process
+'==========================================================
+
+rgList = ({"Arctic", "East Coast", "Great Lakes"})
+theRegion = msgBox.ListAsString(rgList, "Please select a region:",
+  "Choose region")
+
+if(theRegion = nil) then
+  return nil
+elseif(theRegion = "Arctic") then
+  theRegion = "ar"
+elseif(theRegion = "East Coast") then
+  theRegion = "ec"
+elseif(theRegion = "Great Lakes") then
+  theRegion = "gl"
+end
+
+'==========================================================
+'ask user to select either freezeup or breakup
+'==========================================================
+
+producttypeList = {"Freezeup - 2 Week", "Freezeup - 1 Week",
+  "Breakup - 2 Week", "Breakup - 1 Week"}
+  
+productType = msgBox.ListAsString(producttypeList, "Please"++
+  "select a product type:", "Choose Product")
+  
+if(productType = nil) then
+  return nil
+end
+
+'==========================================================
+'assign the correct list of historic dates depending on the
+'region
+'==========================================================
+
+if(theRegion = "ec") then
+  gridDir = _cisRemoteDir+"\rasters\east_coast\1971_2000\ctmed"
+  if(productType = "Freezeup - 1 Week") then
+    outGridName = "ec_frzup1wk"
+    histDateList = {"1204", "1211", "1218", "1225", "0101",
+      "0108", "0115", "0122", "0129", "0205", "0212", "0219", 
+      "0226", "0305", "0312"}
+  elseif(productType = "Breakup - 1 Week") then
+    outGridName = "ec_brkup1wk"  
+    histDateList = {"0709", "0702", "0625", "0618", "0611",
+      "0604", "0528", "0521", "0514", "0507", "0430", "0423",
+      "0416", "0409", "0402", "0326", "0319"}  
+  elseif(productType = "Freezeup - 2 Week") then
+    outGridName = "ec_frzup2wk"  
+    histDateList = {"1204", "1218", "0101", "0115", "0129",
+      "0212", "0226", "0312"}
+  elseif(productType = "Breakup - 2 Week") then
+    outGridName = "ec_brkup2wk"  
+    histDateList = {"0709", "0625", "0611", "0528", "0514", 
+      "0430", "0416", "0402", "0319"} 
+  end
+elseif(theRegion = "gl") then
+  gridDir = _cisRemoteDir+"\rasters\great_lakes\1973_2002\ctmed"
+  if(productType = "Freezeup - 1 Week") then
+    outGridName = "gl_frzup1wk"  
+    histDateList = {"1204", "1211", "1218", "1225", "0101",
+      "0108", "0115", "0122", "0129", "0205", "0212", "0219", 
+      "0226"}
+  elseif(productType = "Breakup - 1 Week") then
+    outGridName = "gl_brkup1wk"    
+    histDateList = {"0514", "0507", "0430", "0423", "0416", 
+      "0409", "0402", "0326", "0319", "0312", "0305"}
+  elseif(productType = "Freezeup - 2 Week") then
+    outGridName = "gl_frzup2wk"    
+    histDateList = {"1218", "0101", "0115", "0129",
+      "0212", "0226"}  
+  elseif(productType = "Breakup - 2 Week") then
+    outGridName = "gl_brkup2wk"    
+    histDateList = {"0430", "0416", "0402", "0319", "0305"}
+  end
+else
+  gridDir = _cisRemoteDir+"\rasters\arctic\1971_2000\ctmed"
+  if(productType = "Freezeup - 1 Week") then
+    outGridName = "ar_frzup1wk"  
+    histDateList = {"0910", "0917", "0924", "1001", "1008",
+      "1015", "1022", "1029", "1105", "1112", "1119", "1126",
+      "1204"}
+  elseif(productType = "Breakup - 1 Week") then
+    outGridName = "ar_brkup1wk"   
+    histDateList = {"0910", "0903", "0827", "0820", "0813",
+      "0806", "0730", "0723", "0716", "0709", "0702", "0625",
+      "0618", "0611", "0604"}
+  elseif(productType = "Freezeup - 2 Week") then
+    outGridName = "ar_frzup2wk" 
+    histDateList = {"0910", "0924", "1008", "1022", "1105",
+      "1119", "1204"}
+  elseif(productType = "Breakup - 2 Week") then
+    outGridName = "ar_brkup2wk"   
+    histDateList = {"0910", "0827", "0813", "0730", "0716", 
+      "0702", "0618", "0604"}
+  end
+end
+
+'==========================================================
+'have the user confirm the location of the median grids
+'==========================================================
+
+gridDir = msgbox.Input("Enter the location of the source median"++
+  "ice grids:", "Source Data", gridDir)
+if((FileName.Make(gridDir)).IsDir.Not) then
+  msgBox.Info("Unable to locate the directory"++gridDir+". Exiting", "Oops")
+  return nil
+end
+
+'==========================================================
+'have the user choose an output directory
+'==========================================================
+
+outDir = msgbox.Input("Enter the output location:", "Output Location", gridDir)
+if((FileName.Make(outDir)).IsDir.Not) then
+  msgBox.Info("Unable to locate the directory"++outDir+". Exiting", "Oops")
+  return nil
+end
+
+'==========================================================
+'set the grid analysis properties now
+'==========================================================
+weekNum = 1
+attribDict = Dictionary.Make(histDateList.Count + 2)
+gridList = {}
+
+'ensure that the consistant nodata grid is the first grid
+'in the list
+nodataSrcName = Grid.MakeSrcName(_cisRefDir+"\rasters\nodata_grids\lcc100\"+theRegion+"_nodata")
+nodataGrid = Grid.Make(nodataSrcName)
+gridList.Add(nodataGrid)
+attribDict.Add(123, {"NO DATA", "AUCUNES DONNÉES"})
+
+'==========================================================
+'use the historic date vtab to get relevent values
+'==========================================================
+
+histdateVTab = VTab.Make((_cisDBDir+"\hist_date_lut.dbf").AsFileName, 
+  False, False)
+histdateshenFld = histdateVTab.FindField("Date_sh_en")
+histdateshfrFld = histdateVTab.FindField("Date_sh_fr")
+
+firstTime = True
+for each histDate in histDateList
+  gridSrcName = Grid.MakeSrcName(gridDir+"\"+theRegion+"_ctmed"+
+    histDate)
+  theGrid = Grid.Make(gridSrcName)
+  
+  'use the first grid for the analysis extent
+  if(firstTime) then
+    Grid.SetAnalysisCellSize(#GRID_ENVTYPE_VALUE, theGrid.GetCellSize)
+    Grid.SetAnalysisExtent(#GRID_ENVTYPE_VALUE, theGrid.GetExtent)
+    firstTime = False
+  end
+
+  '========================================================
+  'create a land grid
+  '========================================================
+
+  landGrid = ((theGrid < 400.AsGrid).SetNull((theGrid < 400.
+    AsGrid)))+900.AsGrid
+  attribDict.Add(900, {"LAND", "TERRE"})
+
+  '========================================================
+  'create a zero grid for the bottom layer for no ice
+  '========================================================
+
+  zeroGrid = (theGrid > 399.AsGrid).SetNull((theGrid > 399.AsGrid))
+  attribDict.Add(0, {"NO ICE", "PAS DE GLACE"})
+
+  '========================================================
+  'get the ice for the date and multiply the grid by the weekNum value
+  '========================================================
+  
+  tmp1Grid = ((theGrid > 0.AsGrid) And (theGrid < 12.AsGrid)).Not
+  tmp2Grid = (tmp1Grid.SetNull(tmp1Grid)) + weekNum.AsGrid
+  
+  gridList.Add(tmp2Grid)
+
+  '========================================================
+  'query the hist date table now
+  '========================================================
+  
+  qryStr = "([Hist_date] = "+histDate.Quote+")"
+  histdateBitmap = histdateVTab.GetSelection
+  histdateVTab.Query(qryStr, histdateBitmap, #VTAB_SELTYPE_NEW)
+  
+  histdateshenVal = histdateVTab.ReturnValue(histdateshenFld, histdateBitmap.GetNextSet(-1))
+  histdateshfrVal = histdateVTab.ReturnValue(histdateshfrFld, histdateBitmap.GetNextSet(-1))
+
+  '========================================================
+  'add the attribute information to the attribDict now
+  '========================================================
+  
+  'set the september 10 minimum ice cover to a special entry
+  
+  if(histDate = "0910") then
+    histdateshenVal = "MINIMAL ICE EXTENT - 0910"
+    histdateshfrVal = "ETENDUE MINIMALE DE GLACE - 0910"
+  end
+  
+  attribDict.Add(weekNum, {histdateshenVal, histdateshfrVal})
+  weekNum = weekNum + 1
+end
+
+histdateVTab.Deactivate
+
+gridList.Add(zeroGrid)
+
+finalGrid = landGrid.Merge(gridList)
+gridVAT = finalGrid.GetVTab
+gridVAT.SetEditable(True)
+f1 = Field.Make("Attr_en", #FIELD_CHAR, 50, 50)
+f2 = Field.Make("Attr_fr", #FIELD_CHAR, 50, 50)
+gridVAT.AddFields({f1, f2})
+
+for each akey in attribDict.ReturnKeys
+  attrenFld = gridVAT.FindField("Attr_en")
+  attrfrFld = gridVAT.FindField("Attr_fr")
+  attrenVal = (attribDict.Get(akey)).Get(0)
+  attrfrVal = (attribDict.Get(akey)).Get(1)
+  qryStr = "([Value] = "+akey.AsString+")"
+  theBitmap = gridVAT.GetSelection
+  gridVAT.Query(qryStr, theBitmap, #VTAB_SELTYPE_NEW)
+  
+  if(theBitmap.Count > 0) then
+    gridVAT.Calculate(attrenVal.Quote, attrenFld)
+    gridVAT.Calculate(attrfrVal.Quote, attrfrFld)
+  end
+end
+
+saveEdits = True
+gridVAT.SetEditable(False)
+
+'==========================================================
+'save the grid now
+'==========================================================
+
+outFN = (outDir+"\"+outgridName).AsFileName
+finalGrid.SaveDataSet(outFN)
+
+gridVAT.Deactivate
+histdateVTab.Deactivate

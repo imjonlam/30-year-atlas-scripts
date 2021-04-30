@@ -1,0 +1,129 @@
+'==========================================================
+'Script Name: CIS.ALL.JoinVTabs
+'
+'Purpose: This script permanently joins any field from
+'         joinVTab which does not appear in the inVTab.
+'         Any scripts calling this, should issue the 
+'         aVTab.Refresh request to ensure correct 
+'         updates.  It's clunky, but there is no similar
+'         functionality in Avenue to permanently achieve
+'         this.
+'         
+'Files Required: None
+'
+'Scripts Required: None
+'
+'Global Variables: _cistmpDir
+'
+'Original Author: Steve McCourt (CIS)
+'
+'Original Script Date: 15-MAY-2003
+'
+'Objects Received: the VTAB object inVTab
+'                  the VTAB object joinVTab
+'                  the STRING object inrelatefldName
+'                  the STRING object joinrelatefldName
+'
+'Objects Returned: None
+'                                       
+'Modifications/Date/Author:
+'==========================================================
+
+inVtab = Self.Get(0)
+joinVTab = Self.Get(1)
+inrelatefldName = (Self.Get(2)).LCase
+joinrelatefldName = (Self.Get(3)).LCase
+
+'==========================================================
+'check to see if the relate fields exist and quit if 
+'either one does not exist
+'==========================================================
+
+if(inVTab.FindField(inrelatefldName) = nil) then
+  return nil
+end
+if(joinVTab.FindField(joinrelatefldName) = nil) then
+  return nil
+end
+
+'==========================================================
+'export the join table to a tmp dbf now since we need to
+'modify the field names
+'==========================================================
+
+newjoinVTab = joinVTab.Export((_cistmpDir+"\xxjointmp.dbf").AsFileName, 
+  dBASE, False)
+joinVTab.Deactivate
+
+joinFlds = newjoinVTab.GetFields.DeepClone
+inFlds = inVTab.GetFields
+
+'==========================================================
+'add any missing fields to a new list to add to inVTab
+'==========================================================
+
+newFlds = {}
+
+for each joinfld in joinFlds
+  joinfldName = (joinfld.GetName).LCase
+  foundFld = False
+  for each infld in inFlds
+    infldName = (infld.GetName).LCase
+    if(joinfldName = infldName) then
+      foundFld = True
+    end
+  end
+  if(foundFld.Not) then
+    newFlds.Add(joinfld)
+  end
+end
+
+'==========================================================
+'quit if no fields
+'==========================================================
+
+if(newFlds.IsEmpty) then
+  av.PurgeObjects
+  return nil
+end
+
+'==========================================================
+'now set bogus aliases in the newjoinVTab now so we don't 
+'run into duplicate fieldnames when calculating
+'==========================================================
+
+newjoinVTab.SetEditable(True)
+for each afld in newjoinVTab.GetFields
+  afld.SetAlias("x_"+afld.GetName)
+end
+saveEdits = True
+newjoinVTab.SetEditable(False)
+
+inVTab.SetEditable(True)
+inVTab.AddFields(newFlds)
+
+inVTab.Join(inVTab.FindField(inrelatefldName), newjoinVTab,
+  newjoinVTab.FindField("x_"+joinrelatefldName))
+  
+for each afld in newFlds
+  fldName = afld.GetName
+  calcStr = "[x_"+fldName+"]"
+  inVTab.Calculate(calcStr, afld)
+end
+
+saveEdits = True
+inVTab.SetEditable(False)
+inVTab.UnjoinAll
+
+inVTab.Deactivate
+newjoinVTab.Deactivate
+
+'==========================================================
+'purge objects to release all handles to the file
+'==========================================================
+
+av.PurgeObjects
+
+File.Delete((_cistmpDir+"\xxjointmp.dbf").AsFileName)
+
+

@@ -1,0 +1,26 @@
+
+
+
+'need a quick patch for a no data area in Georgian Bay
+
+ingridDir = "C:\mccourts\deleteme\gl_tmp\input"
+outgridDir = "C:\mccourts\deleteme\gl_tmp\output"
+
+
+for each aFilename in ingridDir.AsFileName.Read("*xcqqnst*")
+  if(aFilename.IsDir) Then
+    if((aFilename.GetBaseName.LCase = "info").Not) then
+    
+      'now we are dealing with grids
+      
+      producttypeStr = afilename.GetBaseName.Middle(3, 5)      
+      ingridStr = aFileName.AsString
+      outgridStr = outgridDir+"\"+aFilename.GetBaseName
+      
+      'now patch
+      
+      av.Run("CIS.STATS.CleanClimateGrid", {True, True, True, False, "GL", 
+        ingridStr, outgridStr.AsFileName, producttypeStr})
+    end 'not info dir    
+  end 'isdir
+end 'aFilename

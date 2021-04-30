@@ -1,0 +1,393 @@
+'==========================================================
+'Script Name: CIS.MAPS.Main
+'
+'Purpose: Main routine for generating standard CIS climate
+'         products.
+'         
+'Files Required: _cisDBDir\hist_date_lut.dbf
+'
+'Scripts Required: 
+'
+'Global Variables: _cisDBDir
+'                  _cisTmpDir
+'
+'Original Author: Steve McCourt (CIS)
+'
+'Original Script 
+'
+'Objects Received: 
+'
+'Objects Returned: 
+'                                       
+'Modifications/Date/Author: 03-SEP-2003, Steve McCourt
+'                             -removed 2 hardcoded values 
+'                              whoops ;) 
+'                           07-SEP-2003, Steve McCourt
+'                             -changed outputting blank 
+'                              pages if no page numbering
+'                              was selected (request by 
+'                              Richard Chagnon)
+'                           22-APR-2005, Steve McCourt
+'                             -problem with EC 0115/0122
+'                              maps, changes were made in
+'                              CIS.ALL.ReprojectClimateGrid
+'                              which now needs a statType
+'                              argument from here
+'                             -problem with WA ISIS maps
+'                              they needed to be 'clipped'
+'                             -text for 0402 and 0430 for
+'                              AR/WA/EA/HB was incorrect
+'                           28-SEP-2006, Steve McCourt
+'                             -the WA products were failing
+'                              this was fixed by running the
+'                              CleanClimateGrids for the WA
+'==========================================================
+
+'==========================================================
+'set the globals
+'==========================================================
+
+av.Run("CIS.ALL.Globals", {})
+
+'==========================================================
+'check for existance of template.def in _cisTmpDir - if it's
+'missing, get it from the _cisRefDir
+'==========================================================
+
+existingtemplateFN = FileName.Make(_cisTmpDir+"\template.def")
+backuptemplateFN = FileName.Make(_cisRefDir+"\map_templates\"+
+  "template.def")
+
+if(File.Exists(existingtemplateFN).Not) then
+  File.Copy(backuptemplateFN, existingtemplateFN)
+end
+
+'==========================================================
+'now get the user inputs
+'==========================================================
+
+userParams = av.Run("CIS.MAPS.UserInput", {})
+
+theRegion = userParams.Get(0)
+useArcticSourceGrids = userParams.Get(1)
+pageNumbering = userParams.Get(2)
+startPageNum = userParams.Get(3)
+pageNumberPrefix = userParams.Get(4)
+pageSize = userParams.Get(5)
+mapType = userParams.Get(6)
+pageOffset = userParams.Get(7)
+addLogos = userParams.Get(8)
+outFormat = userParams.Get(9)
+outResolution = userParams.Get(10)
+addNumObsBox = userParams.Get(11)
+productList = userParams.Get(12)
+gridDir = userParams.Get(13)
+startYear = userParams.Get(14)
+endYear = userParams.Get(15)
+outDir = userParams.Get(16)
+
+'==========================================================
+'ensure we have a view to work with
+'==========================================================
+
+if(av.FindDoc("Atlas View") = nil) then
+  theView = View.Make
+  theView.SetName("Atlas View")
+else
+  theView = av.FindDoc("Atlas View")
+end
+
+if(mapType = "ISIS") then
+  doISIS = True
+else
+  doISIS = False
+end
+
+'==========================================================
+'get the list of possible historic dates
+'==========================================================
+
+histdateList = av.Run("CIS.MAPS.HistoricDateList", {theRegion})
+numDates = histdateList.Count
+
+'==========================================================
+'we need the hist_date_lut.dbf...
+'==========================================================
+
+histvtabFN = FileName.Make(_cisDBDir+"\hist_date_lut.dbf")
+histVTab = VTab.Make(histvtabFN, False, False)
+
+'==========================================================
+'now let's go!
+'==========================================================
+
+pageNumber = startPageNum
+
+for each statType in productList
+
+  '========================================================
+  'set left facing true and we'll invert once we start with
+  'the products
+  '========================================================
+  
+  leftFacing = True
+  
+  for each histdate in histdateList
+  
+    if(pageNumbering) then
+      pageNumberStr = pageNumberPrefix + pageNumber.AsString 
+    else
+      pageNumberStr = ""   
+    end
+    
+    if(leftFacing) then
+      leftFacing = False
+      pageOffset = pageOffset.Abs
+    else
+      leftFacing = True
+      pageOffset = pageOffset.Negate
+    end
+    
+    'if the arctic source grids are to be used, then
+    'specify "ar" instead of theRegion
+    
+    if(useArcticSourceGrids) then
+      gridStr = gridDir+"\ar_"+statType+histdate
+    else
+      gridStr = gridDir+"\"+theRegion+"_"+statType+histdate
+    end
+    
+    '======================================================
+    'if we can't find a grid, then output a blank page ONLY
+    'if pageNumbering (modified Sep 07, 2003)
+    '======================================================
+    
+    gSrcName = Grid.MakeSrcName(gridStr)
+    if(gSrcName = nil) then
+      thisPageBlank = True
+      
+      if(pageNumbering) then
+      
+        '====================================================
+        'set a few dummy vars for now...
+        '====================================================
+        
+        dateTxt = ""
+        numObsTxt = ""
+        
+        av.Run("CIS.MAPS.OutputMap", {theRegion, statType, mapType,
+          pageOffset, pageSize, addLogos, outFormat, histDate, dateTxt,
+          numObsTxt, outDir, theView, pagenumberStr, addnumobsBox,
+          thisPageBlank, outResolution})
+      end
+        
+      pageNumber = pageNumber + 1
+      continue     
+    else
+      thisPageBlank = False
+    end
+    
+    gridSrcName = Grid.MakeSrcName(gridStr)
+
+    '======================================================
+    'now let's re-project the grid to it's proper orientation
+    'if necessary
+    '======================================================
+  
+    reproject = True
+    if(theRegion = "AR") then
+      reproject = False
+    elseif((theRegion = "WA") and (doISIS)) then
+      reproject = False
+    end
+    
+    if(reproject) then
+      if(theRegion = "WA") then
+        outcentmer = -86
+      elseif(theRegion = "EA") then
+        if(doISIS) then
+          outcentmer = -81
+        else
+          outcentmer = -70
+        end
+      elseif(theRegion = "HB") then
+        if(doISIS) then
+          outcentmer = -56
+        else
+          outcentmer = -59
+        end
+      elseif(theRegion = "EC") then
+        outcentmer = -60
+      elseif(theRegion = "GL") then
+        outcentmer = -83.5
+      end
+    
+      outgridFN = FileName.Make(outDir+"\tmpgrid1")  
+    
+      av.Run("CIS.ALL.ReprojectClimateGrid", {theRegion,
+        gridStr, outgridFN, -100, outcentmer, doISIS, statType})
+
+      av.Run("CIS.STATS.CleanClimateGrid", {False, False, True,
+        False, theRegion, outgridFN.AsString, "", statType})
+    
+      gridStr = outgridFN.AsString
+    end  
+    
+    '======================================================    
+    'ensure we clip the WA ISIS extent since it is not 
+    'reprojected 
+    '======================================================
+        
+    if((doISIS) and (theRegion = "WA")) Then
+      outgridFN = FileName.Make(outDir+"\tmpgrid1")
+      
+      av.Run("CIS.ALL.ClipClimateGrid", {theRegion, gridStr,
+        -100, outgridFN, doISIS})
+      
+      gridStr = outgridFN.AsString
+    end    
+    
+    if(statType.Contains("frq")) then
+      iceproductStr = "frequency"
+    elseif(statType = "prmed") then
+      iceproductStr = "predominant"
+    elseif(statType = "deprt") then
+      iceproductStr = "departure"
+    else
+      iceproductStr = "concentration"
+    end   
+
+    '========================================================
+    'now load the background themes
+    '========================================================
+    
+    av.Run("CIS.MAPS.LoadStandardThemes", {theView, doISIS,
+      theRegion})
+  
+    '========================================================
+    'now load the theme
+    '========================================================
+    
+    thmObject = "gtheme"
+    
+    av.Run("CIS.MAPS.LoadIceTheme", {theView, theRegion,
+      thmObject, gridStr, iceproductStr, doISIS})
+  
+    '========================================================
+    'set our date text from histVTab
+    '========================================================
+    
+    qryStr = "([Hist_date] ="++histDate.Quote+")"
+    histBitmap = histVTab.GetSelection
+    histVTab.Query(qryStr, histBitmap, #VTAB_SELTYPE_NEW)
+    
+    engFld = histVTab.FindField("Date_sh_en")
+    freFld = histVTab.FindField("Date_sh_fr")
+      
+    bit = histBitmap.GetNextSet(-1)
+    
+    engdateTxt = histVTab.ReturnValue(engFld, bit)
+    fredateTxt = histVTab.ReturnValue(freFld, bit)
+    
+    histdateTxt = engdateTxt+" / "+fredateTxt   
+  
+    '========================================================
+    'arctic regions like to have the first of the month
+    'displayed so correct these now
+    '========================================================
+    
+    if((theRegion = "AR") or (theRegion = "WA") or
+       (theRegion = "EA") or (theRegion = "HB")) then
+       
+      if(histDate = "0129") then
+        histdateTxt = "FEB 01 / 01 FEV"
+      elseif(histDate = "0226") then
+        histdateTxt = "MAR 01 / 01 MARS"
+      elseif(histDate = "0402") then
+        histdateTxt = "APR 01 / 01 AVR"
+      elseif(histDate = "0430") then
+        histdateTxt = "MAY 01 / 01 MAI"
+      elseif(histDate = "0514") then
+        histdateTxt = "MAY 15 / 15 MAI"
+      elseif(histDate = "0528") then
+        histdateTxt = "JUN 01 / 01 JUIN"
+      elseif(histDate = "1204") then
+        histdateTxt = "DEC 01 / 01 DEC"
+      end  
+    end    
+    
+    dateTxt = histdateTxt+NL+startYear.AsString+"-"+endYear.AsString
+  
+    '========================================================
+    'now get the number of observations
+    '========================================================
+    
+    if(theRegion = "AR") then
+      rgList = {"EA", "WA", "HB"}
+    else
+      rgList = {theRegion}
+    end
+    
+    numObsList = av.Run("CIS.MAPS.GetNumObs", {rgList, histDate, 
+      startYear, endYear})
+      
+    if(theRegion = "AR") then
+      numObsTxt = "Eastern Arctic/Arctique de l'Est:"++
+                  (numObsList.Get(0)).AsString+NL+
+                  "Western Arctic/Arctique de l'Ouest:"++
+                  (numObsList.Get(1)).AsString+NL+
+                  "Hudson Bay/Baie d'Hudson:"++
+                  (numObsList.Get(2)).AsString
+    elseif(theRegion = "WA") then
+      numObsTxt = "Western Arctic/Arctique de l'Ouest:"++
+                  (numObsList.Get(0)).AsString+NL+" "+NL+" "
+    elseif(theRegion = "EA") then
+      numObsTxt = "Eastern Arctic/Arctique de l'Est:"++
+                  (numObsList.Get(0)).AsString+NL+" "+NL+" "
+    elseif(theRegion = "HB") then
+      numObsTxt = "Hudson Bay/Baie d'Hudson:"++
+                  (numObsList.Get(0)).AsString+NL+" "+NL+" "
+    elseif(theRegion = "EC") then
+      numObsTxt = "East Coast/Côte Est:"++
+                  (numObsList.Get(0)).AsString+NL+" "+NL+" "
+    elseif(theRegion = "GL") then
+      numObsTxt = "Great Lakes/Grands Lacs:"++
+                  (numObsList.Get(0)).AsString+NL+" "+NL+" "
+    end
+  
+    '========================================================
+    'now the final map
+    '========================================================
+    
+    av.Run("CIS.MAPS.OutputMap", {theRegion, statType, mapType,
+      pageOffset, pageSize, addLogos, outFormat, histDate, dateTxt,
+      numObsTxt, outDir, theView, pagenumberStr, addnumobsBox,
+      thisPageBlank, outResolution})
+  
+    '========================================================
+    'now cleanup our view
+    '========================================================
+    
+    for each thm in theView.GetThemes.Clone
+      theView.DeleteTheme(thm)
+      theView.Invalidate
+    end
+    
+    '========================================================
+    'now kill the reprojected grid if necessary
+    '========================================================
+    
+    if((reproject) or ((doISIS) and (theRegion = "WA")))then
+      gridSrcName = nil
+      gridName = nil
+      av.PurgeObjects
+      Grid.DeleteDataSet(gridStr.AsFileName)
+    end
+  
+    pageNumber = pageNumber + 1   
+  end  
+end
+
+histVTab.Deactivate
+histVTab = nil
+av.PurgeObjects

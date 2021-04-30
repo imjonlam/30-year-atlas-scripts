@@ -1,0 +1,139 @@
+'==========================================================
+'Script Name: CIS.MAPS.ExportOrPrintLayout
+'
+'Purpose: Exports a layout to the desired format or prints
+'         the layout.
+'         
+'Files Required: None
+'
+'Scripts Required: None
+'
+'Global Variables: _cisRefDir
+'
+'Original Author: Steve McCourt (CIS)
+'
+'Original Script Date: 01-DEC-2001
+'
+'Objects Received: the LAYOUT object theLayout
+'                  the STRING object outFN
+'                  the NUMBER object outResolution
+'
+'Objects Returned: None
+'                                       
+'Modifications/Date/Author: 16-MAY-2003, Steve McCourt
+'                             -added JPEG support
+'                           07-JUL-2010, Steve McCourt
+'                             -completely re-written to
+'                              use ImageAlchemy instead
+'                              of Alchlong
+'                             -also added PNG output
+'
+'Additonal Notes: Do a timing on a printer if you want
+'                 to print hardcopies, then change the
+'                 time values below so the printer isn't
+'                 clogged.
+'==========================================================
+
+theLayout = Self.Get(0)
+outFN = Self.Get(1)
+outResolution = Self.Get(2)
+
+if(outResolution.Is(Number)) then
+  outResolution = outResolution.AsString
+end
+
+gifFormat = False
+printFormat = False
+psFormat = False
+jpgFormat = False
+alchemyProgram = _cisRefDir+"\programs\image_alchemy\alchemy"
+
+'==========================================================
+'check to see if we need to rotate the output image file
+'using alchemy (ps always rotates to portrait, and so you need
+'to explicitly rotate it with alchemy)
+'==========================================================
+
+mapPDisplay = theLayout.GetDisplay
+pageRect = mapPDisplay.ReturnPageExtent
+if(pageRect.GetWidth > pageRect.GetHeight) then
+  psRotation = 270
+else
+  psRotation = 0
+end
+
+'==========================================================
+'kill the file first if it already exists
+'==========================================================
+
+if(File.Exists(FileName.Make(outFN))) then
+  File.Delete(FileName.Make(outFN))
+end
+
+if(outFN.IsNull) then
+  printFormat = True
+else
+  outFNList = outFN.AsTokens(".")
+  theExt = outFNList.Get(outFNList.Count - 1)
+  psFN = outFNList.Get(0)+".ps"
+  if(theExt = "ps") then
+    psFormat = True
+  elseif(theExt = "gif") then
+    gifFormat = True
+  elseif(theExt = "jpg") then
+    jpgFormat = True
+  elseif(theExt = "png") then
+    pngFormat = True
+  end
+end
+
+'==========================================================
+'print to file first if not hardcopy printing
+'==========================================================
+
+if(printFormat) Then
+  theLayout.Print
+  computerDate = Date.Now.AsSeconds
+  
+  '========================================================
+  'change the timing options below hardcopy outputs
+  '========================================================
+  
+  endDate = Date.Now.AsSeconds + 120
+  while((computerDate) <= endDate)
+    computerDate = Date.Now.AsSeconds
+  end
+else
+  if(File.Exists(FileName.Make(psFN))) then
+    File.Delete(FileName.Make(psFN))
+  end 
+  
+  Printer.The.SetFormat(#PRINTER_FORMAT_POSTSCRIPT)
+  Printer.The.SetFileName(psFN)
+  theLayout.Print
+  computerDate = Date.Now.AsSeconds
+  endDate = Date.Now.AsSeconds + 5
+  while((computerDate) <= endDate)
+    computerDate = Date.Now.AsSeconds
+  end
+
+  if(gifFormat) then    
+    System.ExecuteSynchronous(alchemyProgram++psFN++
+      outFN++"-o -Q -g -Zc0 -Zm4 -Zr"+psRotation.AsString++"-d0 -Zd"++outResolution++outResolution)    
+    File.Delete(FileName.Make(psFN))
+  elseif(jpgFormat) then
+    System.ExecuteSynchronous(alchemyProgram++psFN++
+      outFN++"-o -Q -j -Zc0 -Zm4 -Zr"+psRotation.AsString++"-d0 -Zd"++outResolution++outResolution)  
+    File.Delete(FileName.Make(psFN))
+  elseif(pngFormat) then
+    System.ExecuteSynchronous(alchemyProgram++psFN++
+      outFN++"-o -Q ---n -Zc0 -Zm4 -Zr"+psRotation.AsString++"-d0 -Z"++outResolution++outResolution)  
+    File.Delete(FileName.Make(psFN))    
+  elseif(psFormat) then
+    'do nothing
+  end 'if gif/jpeg/ps
+end
+
+
+
+

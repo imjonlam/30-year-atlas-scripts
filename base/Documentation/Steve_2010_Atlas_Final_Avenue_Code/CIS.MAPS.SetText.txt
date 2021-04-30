@@ -1,0 +1,66 @@
+'==========================================================
+'Script Name: CIS.MAPS.SetText
+'
+'Purpose: Sets text on a layout given a string to find.
+'         This will also re-center the text to where the
+'         old text was centered.
+'
+'         NOTE: if your text contains more than 1 line,
+'               need to specify a newline in the txtToFind
+'               i.e. "line one is this"+NL+"and line 2"
+'         
+'Files Required: None
+'
+'Scripts Required: None
+'
+'Global Variables: None
+'
+'Original Author: Steve McCourt (CIS)
+'
+'Original Script Date: 13-MAY-2003
+'
+'Objects Received: the STRING object txtToFind
+'                  the STRING object newTxt
+'                  the LAYOUT object theLayout
+'                  the BOOLEAN object alignCenter
+'
+'Objects Returned: None
+'                                       
+'Modifications/Date/Author: 23-AUG-2003, Steve McCourt
+'                             -added alignCenter arg to allow
+'                              right-justified text
+'==========================================================
+
+txtToFind = Self.Get(0)
+newTxt = Self.Get(1)
+theLayout = Self.Get(2)
+alignCenter = Self.Get(3)
+
+theGraphicList = theLayout.GetGraphics
+theGraphicList.UnselectAll
+for each g in theGraphicList
+  if(g.is(GraphicText)) then
+    if(g.GetText = txtToFind) then
+      if(alignCenter) then
+        oldxCenter = g.GetBounds.ReturnCenter.GetX
+        oldBottom = g.GetBounds.GetBottom
+        oldHeight = g.GetBounds.GetHeight
+        g.SetText(newTxt)
+        g.Invalidate
+        newWidth = g.GetBounds.GetWidth
+        newRectOrigin = Point.Make((oldxCenter - (newWidth / 2)), oldBottom)
+        newRectSize = Point.Make(newWidth, oldHeight)
+        g.SetBounds(Rect.Make(newRectOrigin, newRectSize))
+      else
+        g.SetText(newTxt)
+        g.Invalidate
+      end
+      theGraphicList.Invalidate      
+    end
+  end
+end
+
+theLayout.Invalidate
+      
+
+

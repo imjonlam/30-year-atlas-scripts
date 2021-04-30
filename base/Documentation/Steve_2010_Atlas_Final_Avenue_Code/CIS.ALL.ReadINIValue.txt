@@ -1,0 +1,105 @@
+'==========================================================
+'Script Name: CIS.ALL.ReadINIValue
+'
+'Purpose: This script will read an INI file for desired
+'         program variables.  INI files are expected to be
+'         of the following format:
+'           ;a comment
+'           [akeyname]
+'           avariable=avalue
+'           etc.
+'         Use the keyword "all" for theKeyname to read
+'         all possible keys, otherwise specify a keyname.
+'
+'         Returns a nil object if varToFind was not found
+'         
+'Files Required: None
+'
+'Scripts Required: None
+'
+'Global Variables: None
+'
+'Original Author: Steve McCourt (CIS)
+'
+'Original Script Date: 13-JUL-2005
+'
+'Objects Received: the STRING object theKeyname
+'                  the STRING object varToFind
+'                  the FILENAME object iniFileName
+'
+'Objects Returned: the STRING object theVal
+'                                       
+'Modifications/Date/Author: 
+'==========================================================
+
+theKeyname = (Self.Get(0)).LCase
+varToFind = (Self.Get(1)).LCase
+iniFileName = Self.Get(2)
+
+if(iniFileName.Is(String)) then
+  iniFileName = iniFileName.AsFileName
+end
+
+iniLineFile = LineFile.Make(iniFileName, #FILE_PERM_READ)
+
+if(theKeyname = "all") then
+  readAllKeys = True
+else
+  readAllKeys = False
+end
+
+notFound = True
+readKey = False
+currentKey = ""
+theLine = iniLineFile.ReadElt.Trim
+theVal = ""
+
+
+while (notFound)
+  if(theLine = nil) then
+    break
+  end  
+  firstChar = theLine.Left(1)
+  lastChar = theLine.Right(1)
+  if(firstChar = "[") then
+    currentKey = theLine.Substitute("[","")
+    currentKey = currentKey.Substitute("]", "")
+    if((theKeyName = "all") or (theKeyName = currentKey)) then
+      readKey = True
+    else
+      readKey = False
+    end
+  else
+    if((firstChar = ";") or (firstChar = "")) then
+      'skip comments or blank lines
+    elseif(readKey) then
+      theLineList = theLine.AsTokens("=")
+      theVar = (theLineList.Get(0)).LCase.Trim
+      if(theLineList.Count = 1) then
+        theVal = ""
+      else
+        theVal = (theLineList.Get(1)).Trim
+      end
+      if(theVar = varToFind) then
+        notFound = False      
+      end
+    end
+  end
+  if((iniLineFile.IsAtEnd) and (notFound))then
+    notFound = False
+    theVal = nil
+  elseif(iniLineFile.IsAtEnd) then
+    break
+  else
+    theLine = iniLineFile.ReadElt.Trim
+  end
+end
+
+iniLineFile.Close
+
+return theVal
+
+
+
+
+

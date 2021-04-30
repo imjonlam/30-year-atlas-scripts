@@ -1,0 +1,110 @@
+'==========================================================
+'Script Name: CIS.STATS.MakeIceFreeShapeFile
+'
+'Purpose: Creates a shapefile with only land and ice free
+'         polygons.  The only fields set are AREA, 
+'         PERIMETER, PNT_TYPE, EGG_NAME, A_LEGEND, and
+'         N_CT
+'         
+'Files Required: None
+'
+'Scripts Required: CIS.ALL.ImportCov
+'                  CIS.ALL.RunDosCmd
+'
+'Global Variables: None
+'
+'Original Author: Steve McCourt (CIS)
+'
+'Original Script Date: 28-MAR-2003
+'
+'Objects Received: the SRCNAME object inSrcName
+'                  the FILENAME object outFileName
+'
+'Objects Returned: None
+'                                       
+'Modifications/Date/Author: 
+'==========================================================
+
+inSrcName = Self.Get(0)
+outFileName = Self.Get(1)
+
+if(outFileName.Is(String)) then
+  outFileName = outFileName.AsFileName
+elseif(outFileName.Is(SrcName)) then
+  outFileName = outFileName.AsString.AsFileName
+end
+      
+'====================================================
+'remove all polys except for land from the ftab
+'====================================================
+
+theFTab = FTab.Make(inSrcName)
+theFTab.SetEditable(True)
+shpFld = theFTab.FindField("Shape")
+qryStr = "(([Pnt_type] <> 400) and ([Pnt_type] <> 900))"
+
+ftabBitmap = theFTab.GetSelection
+theFTab.Query(qryStr, ftabBitmap, #VTAB_SELTYPE_NEW)
+firstTime = True
+for each bit in ftabBitmap
+  if(firstTime) then
+    totShp = theFTab.ReturnValue(shpFld, bit)
+    firstTime = False
+    continue
+  end
+  thisShp = theFTab.ReturnValue(shpFld, bit)
+  totShp = totShp.ReturnUnion(thisShp)
+end
+
+'====================================================
+'now remove the non-land polys and add the new shape
+'====================================================
+
+theFTab.RemoveRecords(ftabBitmap)
+saveEdits = True
+theFTab.SetEditable(False)
+theFTab.SetEditable(True)
+newRec = theFTab.AddRecord
+theFTab.SetValue(shpFld, newRec, totShp)
+
+'====================================================
+'add the ice free attributes now
+'====================================================
+
+theFTab.SetValue(theFTab.FindField("Area"), newRec,
+  totShp.ReturnArea)
+theFTab.SetValue(theFTab.FindField("Perimeter"),
+  newRec, totShp.ReturnLength)
+theFTab.SetValue(theFTab.FindField("Pnt_type"),
+  newRec, 115)
+theFTab.SetValue(theFTab.FindField("Egg_name"),
+  newRec, "IF")
+theFTab.SetValue(theFTab.FindField("A_legend"),
+  newRec, "Ice free")
+theFTab.SetValue(theFTab.FindField("N_ct"),
+  newRec, " 0.0")
+
+'====================================================
+'now clean each shape for safety sake
+'====================================================
+
+ftabBitmap.SetAll
+
+for each bit in ftabBitmap
+  thisShp = theFTab.ReturnValue(shpFld, bit)
+  newShp = thisShp.Clean
+  theFTab.SetValue(shpFld, bit, newShp)
+  theFTab.SetValue(theFTab.FindField("Area"),
+    newRec, newShp.ReturnArea)
+  theFTab.SetValue(theFTab.FindField("Perimeter"),
+    newRec, newShp.ReturnLength) 
+end 
+
+saveEdits = True
+theFTab.SetEditable(False)  
+outFTab = theFTab.ExportClean(outFileName, False)  
+theFTab.Deactivate
+outFTab.Deactivate
+
+av.PurgeObjects
+

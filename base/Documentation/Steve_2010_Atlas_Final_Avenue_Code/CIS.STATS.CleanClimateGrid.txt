@@ -1,0 +1,184 @@
+'==========================================================
+'Script Name: CIS.STATS.CleanClimateGrid
+'
+'Purpose: Cleans a climate grid based on desired operation:
+'           -add a nodata mask with values of 123
+'           -add a consistent land layer with values of 900
+'           -clip to a consistent area (NOT COMPLETE YET)
+'    
+'         GOTCHA! (11-APR-2011)
+'           -if you only want grid attributes added, send
+'            the input and output FN as the same because
+'            that section does not output a new grid
+'         
+'Files Required: Grids in the appropriate _CISRefDir
+'
+'Scripts Required: CIS.STATS.CtDict
+'                  CIS.STATS.PrDict
+'                  CIS.STATS.FrqDict
+'
+'Global Variables: _cisRefDir
+'
+'Original Author: Steve McCourt (CIS)
+'
+'Original Script: 27-MAR-2003 
+'
+'Objects Received: the BOOLEAN object addNoData
+'                  the BOOLEAN object addLand
+'                  the BOOLEAN object addAttribs
+'                  the BOOLEAN object clipIt
+'                  the STRING object theRegion
+'                  the STRING object ingridStr
+'                  the FILENAME object outFileName
+'                  the STRING object statType
+'
+'Objects Returned: None
+'                                       
+'Modifications/Date/Author: 
+'==========================================================
+
+addNodata = Self.Get(0)
+addLand = Self.Get(1)
+addAttribs = Self.Get(2)
+clipIt = Self.Get(3)
+theRegion = (Self.Get(4)).LCase
+ingridStr = Self.Get(5)
+outFileName = Self.Get(6)
+statType = (Self.Get(7)).LCase
+
+if(ingridStr.Is(FileName)) then
+  ingridStr = ingridStr.AsString
+elseif(outFileName.Is(SrcName)) then
+  ingridStr = ingridStr.AsString
+end
+
+if(outFileName.Is(String)) then
+  outFileName = outFileName.AsFileName
+elseif(outFileName.Is(SrcName)) then
+  outFileName = outFileName.AsString.AsFileName
+end
+
+inGrid = Grid.Make(Grid.MakeSrcName(ingridStr))
+
+Grid.SetAnalysisCellSize(#GRID_ENVTYPE_VALUE, inGrid.GetCellSize)
+
+if(addNoData) then
+  theSrcName = Grid.MakeSrcName(_cisRefDir+"\rasters\nodata_grids\lcc100\"+theRegion.LCase+"_nodata")
+  nodataGrid = Grid.Make(theSrcName)
+  outGrid = nodataGrid.Merge({inGrid})
+  nodataGrid = nil
+  inGrid = nil
+  inGrid = outGrid
+  outGrid = nil
+end
+if(addLand) then
+  theSrcName = Grid.MakeSrcName(_cisRefDir+"\rasters\land_grids\lcc100\"+theRegion.LCase+"_land")
+  landGrid = Grid.Make(theSrcName)
+  outGrid = landGrid.Merge({inGrid})
+  landGrid = nil
+  inGrid = nil
+  inGrid = outGrid
+  outGrid = nil
+end
+
+if(clipIt) then
+  
+end
+
+if (addNodata or addLand or clipIt) then  
+  '======================================================  
+  'save the grid now and the VAT will now be
+  'available if addAttribs is required
+  '======================================================  
+  
+  inGrid.SaveDataSet(outFileName)
+  inGrid = nil
+  theSrcName = Grid.MakeSrcName(outFileName.AsString)
+  inGrid = Grid.Make(theSrcName)
+  
+  av.PurgeObjects
+  
+  Grid.DeleteDataSet(ingridStr.AsFileName)
+end
+
+
+if(addAttribs) then  
+  theVAT = inGrid.GetVTab
+  theVAT.SetEditable(True)
+  enFld = theVAT.FindField("Attr_en")
+  frFld = theVAT.FindField("Attr_fr")
+  
+  if(enFld = nil) then
+    f1 = Field.Make("Attr_en", #FIELD_CHAR, 50, 50)
+    f2 = Field.Make("Attr_fr", #FIELD_CHAR, 50, 50)
+    theVAT.AddFields({f1,f2})  
+  end
+  
+  enFld = theVAT.FindField("Attr_en")
+  frFld = theVAT.FindField("Attr_fr")
+  
+  valueFld = theVAT.FindField("Value")
+  
+  theBitmap = theVAT.GetSelection
+
+  '========================================================  
+  'run the dictionary scripts now
+  '========================================================  
+  
+  if(theRegion = "gl") then
+    lakeOrSea = "lake"
+  else
+    lakeOrSea = "sea"
+  end
+  
+  if((statType.Contains("ctmed")) or (statType.Contains("cpmed")) or
+     (statType.Contains("ctavg"))) then
+    theDict = av.Run("CIS.ALL.AttributeDictionaries",
+      {"concentration", lakeOrSea})
+  elseif(statType.Contains("oimed")) then
+    theDict = av.Run("CIS.ALL.AttributeDictionaries",
+      {"concentration", lakeOrSea})
+  elseif(statType.Contains("cpmed")) then
+    theDict = av.Run("CIS.ALL.AttributeDictionaries",
+      {"concentration", lakeOrSea})
+  elseif(statType.Contains("pr")) then
+    theDict = av.Run("CIS.ALL.AttributeDictionaries",
+      {"predominant", lakeOrSea})
+  else
+    theDict = av.Run("CIS.ALL.AttributeDictionaries",
+      {"frequency", lakeOrSea})
+  end
+  
+  for each key in theDict.ReturnKeys
+    valueList = theDict.Get(key)
+    fromVal = valueList.Get(0)
+    toVal = valueList.Get(1)
+    enVal = valueList.Get(2)
+    frVal = valueList.Get(3)
+
+    '======================================================  
+    'query the VAT now
+    '======================================================  
+    
+    qryStr = "(([Value] >="++fromVal.AsString+") and"++
+              "([Value] <="++toVal.AsString+"))"
+    
+    theVAT.Query(qryStr, theBitmap, #VTAB_SELTYPE_NEW)
+    
+    if(theBitmap.Count = 0) then
+      continue
+    end
+    
+    theVAT.Calculate(enVal.Quote, enFld)
+    theVAT.Calculate(frVal.Quote, frFld)
+  end
+  
+  theBitmap.ClearAll
+  saveEdits = True
+  theVAT.SetEditable(False)
+  theVAT.Deactivate    
+  inGrid = nil
+end
+
+av.PurgeObjects
+

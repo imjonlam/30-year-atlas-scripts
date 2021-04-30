@@ -1,0 +1,301 @@
+'==========================================================
+'Script Name: CIS.ALL.ReprojectClimateGrid
+'
+'Purpose: This script uses the GRID command WARP to 
+'         reproject a CIS climate grid to the "rotated"
+'         projection.  The script uses 4 control points
+'         to accomplish this from the table listed below.
+'
+'Files Required: _cisRefDir\shapefiles\*_atlas_lcc*.shp
+'
+'Scripts Required: CIS.ALL.JoinVTabs
+'
+'Global Variables: _cisRefDir
+'
+'Original Author: Steve McCourt (CIS)
+'
+'Original Script Date: 03-MAR-2003
+'
+'Objects Received: the STRING object theRegion
+'                  the GRID object inGrid
+'                  the NUMBER object incentMer
+'                  the NUMBER object outcentMer 
+'
+'Objects Returned: the GRID object prjGrid
+'                                       
+'Modifications/Date/Author: 14-MAY-2003 - Steve McCourt
+'                             -was buggy using the old
+'                              method, now we have 
+'                              explicitly coded 5 lat/long
+'                              points per region to use as
+'                              control points
+'                           22-APR-2005, Steve McCourt
+'                             -there was a bug with the
+'                              Grid.Expand request (see
+'                              comments) it's fixed now
+'                           08-JUL-2010, Steve McCourt
+'                             -had to adjust some code for
+'                              new products
+'==========================================================
+
+theRegion = (Self.get(0)).LCase
+inGridStr = Self.Get(1)
+outFN = Self.Get(2)
+incentMer = Self.Get(3)
+outcentMer = Self.Get(4)
+useIsis = Self.Get(5)
+statType = (Self.Get(6)).LCase
+
+if(useIsis = nil) then
+  useIsis = False
+end
+
+'==========================================================
+'ensure we're dealing with the correct objects
+'==========================================================
+
+if(inGridStr.Is(FileName)) then
+  inGridStr = inGridStr.AsString
+elseif(inGridStr.Is(SrcName)) then
+  inGridStr = inGridStr.AsString
+end
+
+if(outFN.Is(String)) then
+  outFN = outFN.AsFileName
+end
+
+inGridSrcName = Grid.MakeSrcName(inGridStr)
+inGrid = Grid.Make(inGridSrcName)
+
+'==========================================================
+'set the outcellsize equal to the incellsize and get the
+'extent of the ingrid
+'==========================================================
+
+outcellSize = inGrid.GetCellsize
+oldgridRect = inGrid.GetExtent
+
+'==========================================================
+'we need to use the bnd for the region (truncate the 
+'central meridian because the great lakes bnd is named
+'*lcc83* not *lcc83.5*
+'==========================================================
+
+if(useIsis) then
+  bndSrcName = SrcName.Make(_cisRefDir+"\shapefiles\bnds\"+theRegion+
+    "_isis_lcc"+outcentMer.Truncate.Abs.AsString+".shp")  
+else
+  bndSrcName = SrcName.Make(_cisRefDir+"\shapefiles\bnds\"+theRegion+
+    "_atlas_lcc"+outcentMer.Truncate.Abs.AsString+".shp")
+end
+
+'==========================================================
+'just in case there is more than one shape in the bnd,
+'union all the shapes
+'==========================================================
+
+bndFTab = FTab.Make(bndSrcName)
+bndshpFld = bndFTab.FindField("Shape")
+
+totShp = bndFTab.ReturnValue(bndshpFld, 0)
+
+if(bndFTab.GetNumRecords > 1) then
+  for each rec in 1..(bndFTab.GetNumRecords - 1)
+    shp = bndFTab.ReturnValue(bndshpFld, rec)
+    totShp = totShp.ReturnUnion(shp)
+  end
+end
+
+'==========================================================
+'create a buffer shape which is 1 cell less than the 
+'original shape which will be used to fix projection
+'blips around the edges - what happens is when a grid is
+'reprojected, there are little bumps which don't make for
+'a clean rectangle, so we select the grid one cell inwards
+'and then expand one to fix this
+'==========================================================
+
+bufShp = totShp.ReturnBuffered(-outcellSize)
+
+'==========================================================
+'specify the control points which have been selected 
+'to fall within any regional chart boundary
+'==========================================================
+
+lambertRect = Rect.MakeXY(165,38,35,85)
+
+inputPrj = Lambert.Make(lambertRect)
+inputPrj.SetCentralMeridian(incentMer)
+inputPrj.SetReferenceLatitude(40)
+inputPrj.SetLowerStandardParallel(49)
+inputPrj.SetUpperStandardParallel(77)
+inputPrj.SetFalseEasting(0)
+inputPrj.SetFalseNorthing(0)
+
+outputPrj = Lambert.Make(lambertRect)
+outputPrj.SetCentralMeridian(outcentMer)
+outputPrj.SetReferenceLatitude(40)
+outputPrj.SetLowerStandardParallel(49)
+outputPrj.SetUpperStandardParallel(77)
+outputPrj.SetFalseEasting(0)
+outputPrj.SetFalseNorthing(0)  
+
+if(theRegion = "gl") then
+  linkgeoPts = {-90@42, -91@48, -77@48, -78@42, -83@45}
+elseif(theRegion = "ec") then
+  linkgeoPts = {-68@44, -70@55, -45@55, -48@44, -58@50}
+elseif(theRegion = "hb") then
+  linkgeoPts = {-85@53, -85@61, -60@65, -60@57, -75@60}
+elseif(theRegion = "ea") then
+  linkgeoPts = {-85@67, -95@80, -50@80, -60@67, -75@73}
+elseif(theRegion = "wa") then
+  linkgeoPts = {-125@69, -150@70, -105@78, -100@70, -125@73}
+end
+
+linkList = {}
+
+for each geoPt in linkgeoPts
+  inlamPt = geoPt.ReturnProjected(inputPrj)
+  outlamPt = geoPt.ReturnProjected(outputPrj)
+  linkLine = Line.Make(inlamPt, outlamPt)
+  linkList.Add(linkLine)
+end
+  
+'==========================================================
+'initially set the analysis environment to the maxof
+'==========================================================
+
+Grid.SetAnalysisExtent(#GRID_ENVTYPE_MAXOF, Rect.MakeNull)
+
+'==========================================================
+'reproject using WARP
+'==========================================================
+
+g1 = inGrid.Warp(linkList, 1, #GRID_RESTYPE_NEAREST, 
+  outcellSize)
+
+'==========================================================
+'now extract the grid using the buffered bnd shape
+'==========================================================
+
+g2 = g1.ExtractByPolygon(bufShp, Prj.MakeNull, False)
+
+'==========================================================
+'Start New Code April 22, 2005
+'
+'there's a bug in the Grid.Expand request: the expandList
+'parameter can be a maximum of 85 values, so we need to 
+'account for this (this was discovered in November 2004
+'when Richard Chagnon ran frequency stats for EC and for
+'an unknown reason the maps failed on 0115 and 0122
+'  don't forget to add theRegion as a param to the script
+'  don't forget to add statType as a param to the script
+'==========================================================
+
+
+if(statType.Contains("frq")) then
+  dictType = "frequency"
+elseif(statType = "prmed") then
+  dictType = "predominant"
+else
+  dictType = "concentration"
+end
+
+if(theRegion = "gl") then
+  lakeOrSea = "lake"
+else
+  lakeOrSea = "sea"
+end
+attribDict = av.Run("CIS.ALL.AttributeDictionaries",{dictType,lakeOrSea})
+
+'==========================================================
+'now use con to reclassify the input grid to ensure we
+'keep the number of values under 85
+'==========================================================
+
+g3 = g2
+for each aKey in attribDict.ReturnKeys
+  startVal = (attribDict.Get(aKey)).Get(0)
+  endVal = (attribDict.Get(aKey)).Get(1)
+  g3 = ((g3 >= startVal.AsGrid) and (g3 <= endVal.AsGrid)).Con(endVal.AsGrid, g3)
+end
+
+'==========================================================
+'End New Code April 22, 2005
+'==========================================================
+
+'==========================================================
+'now expand the grid to fill in the nodata holes left
+'from the warp/re-projection
+'==========================================================
+
+expandList = {}
+
+inVat = g3.GetVTab
+for each rec in inVat
+  val = inVat.ReturnValue(inVat.FindField("Value"), rec)
+  expandList.Add(val)
+end
+
+g4 = g3.Expand(3, expandList)
+
+'==========================================================
+'finally extract the grid using the original bnd shape
+'==========================================================
+
+g5 = g4.ExtractByPolygon(totShp, Prj.MakeNull, False)
+
+'==========================================================
+'now we can essentially crop the grid by re-setting the
+'the GRID analysis extent by using the rounded extent of 
+'the bnd (this ensures a gridcell origin based on the 
+'cellsize
+'==========================================================
+
+totshpExtent = totShp.ReturnExtent
+llx = (((totshpExtent.GetLeft) / outcellSize).Round) * outcellSize
+lly = (((totshpExtent.GetBottom) / outcellSize).Round) * outcellSize
+urx = (((totshpExtent.GetRight) / outcellSize).Round) * outcellSize
+ury = (((totshpExtent.GetTop) / outcellSize).Round) * outcellsize
+
+Grid.SetAnalysisExtent(#GRID_ENVTYPE_VALUE, Rect.MakeXY(llx,lly,urx,ury))
+
+prjGrid = g5 * 1.AsGrid 
+prjGrid.SaveDataSet(outFN)
+
+'==========================================================
+'now join any previously existing attributes that will
+'have been lost now
+'==========================================================
+'
+'prjVAT = prjGrid.GetVTab
+'av.Run("CIS.ALL.JoinVTabs", {prjVAT, inVAT, "Value", "Value"})
+'prjVAT.Deactivate
+
+'==========================================================
+'Start New Code April 22, 2005
+'  since we've changed the values in the grid, we can't
+'  be assured that the above join will work, so we'll call
+'  CIS.STATS.CleanClimateGrid to add the attributes
+'==========================================================
+
+av.Run("CIS.STATS.CleanClimateGrid", {False, False, True,
+  False, theRegion, outFN.AsString, "", statType})
+
+'==========================================================
+'End New Code April 22, 2005
+'==========================================================
+
+'==========================================================
+'cleanup
+'==========================================================
+
+g1 = nil
+g2 = nil
+g3 = nil
+g4 = nil
+prjGrid = nil
+
+
+
+

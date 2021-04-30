@@ -1,0 +1,100 @@
+'simple instructions...
+'1. see if the extension "Manual Grid Editor (v3)" exists
+'    -use it to patch what you need
+'    -IMPORTANT: set the analysis extent to your grid prior to edits
+'    -make changes, it's pretty basic and intuitive
+'
+'2. export the "modified grid" to a new location and add it 
+'   as a theme
+'
+'3. then run this script from the view with your new grid theme
+'   to re-create the VAT entries (note will not work for freeze /
+'   break grids).
+'
+'==================================================================
+theView = av.GetActiveDoc
+theThemes = theView.GetThemes
+theGTheme = msgbox.ChoiceAsString(theView.GetThemes, "Choose the"++
+  "theme to add attributes to:", "Choose Theme")
+
+'quit if user cancels
+if(theGTheme = nil) then
+  return nil
+else
+  theGridSrcName = theGTheme.GetGrid.GetSrcName
+end  
+
+'have user choose the region
+regionList = {"East Coast", "Great Lakes", "Arctic"}
+theRegion = msgbox.ListAsString(regionList, "Choose a Region","Choose a Region")
+if(theRegion = nil) then
+  return nil
+else
+  if(theRegion = "East Coast") then
+    theRegion = "ec"
+  elseif(theRegion = "Great Lakes") then
+    theRegion = "gl"
+  elseif(theRegion = "Arctic") then
+    theRegion = "ar"
+  end
+end
+
+'finally have user choose the type of product
+statList = {"Median of Ice Concentration",
+  "Median of Ice Concentration When Ice Is Present",
+  "Median of Predominant Ice Type When Ice Is Present",
+  "Frequency of Presence of Ice",
+  "Frequency of Presence of Old Ice (1 to 10/10)",
+  "Frequency of Presence of Old Ice (4 to 10/10)"}
+
+theStat = msgBox.ListAsString(statList, "Choose the type of product that you"++
+  "are editing:", "Choose Statistic Type")
+if(theStat = nil) then
+  return nil
+else
+  if(theStat = "Median of Ice Concentration") then
+    theStat = "ctmed"
+  elseif(theStat = "Median of Ice Concentration When Ice Is Present") then
+    theStat = "cpmed"
+  elseif(theStat = "Median of Predominant Ice Type When Ice Is Present") then
+    theStat = "prmed"
+  elseif(theStat = "Frequency of Presence of Ice") then
+    theStat = "icfrq"
+  elseif(theStat = "Frequency of Presence of Old Ice (1 to 10/10)") then
+    theStat = "oifrq"
+  elseif(theStat = "Frequency of Presence of Old Ice (4 to 10/10)") then
+    theStat = "o4frq"
+  end
+end
+
+'sanity check
+if(theRegion = "gl") then
+  if((theStat = "oifrq") or (theStat = "o4frq")) then
+    msgbox.error("Old ice is not applicable for the Great Lakes. Exiting.", "Oops!")
+    return nil
+  end
+elseif(theRegion = "ec") then
+  if(theStat = "o4frq") then
+    msgbox.error("Old ice in concentrations greater than 1/10 are not applicable"++
+      "for the East Coast. Exiting.", "Oops!")
+    return nil
+  end     
+end
+
+av.Run("CIS.STATS.CleanClimateGrid", {false, false, true, false, theRegion,
+  theGridSrcName.AsString, "", theStat})
+  
+'just to make sure we don't have any niggling graphic objects in the view
+theGL = theView.GetGraphics
+theGL.Empty
+'theGL.Invalidate
+'theView.Invalidate
+  
+msgbox.Info("Done. Note that you may need to re-add the theme to see the"++
+  "changes to the attribute table.","Done!")
+return nil
+  
+
+
+
+

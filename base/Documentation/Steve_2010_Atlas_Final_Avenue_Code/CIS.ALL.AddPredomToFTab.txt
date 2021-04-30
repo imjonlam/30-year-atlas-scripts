@@ -1,0 +1,377 @@
+'==========================================================
+'Script Name: CIS.ALL.AddPredomToFtab
+'
+'Purpose: This script will set 2 fields in an ftab to
+'         determine the predominant icetype for an egg.
+'         The field "P_stage" is the predominant icetype 
+'         as it appears in the egg, and "N_pstage" is a 
+'         numeric equivalent for use in statistical
+'         calculations.
+' 
+'         The rules for predominance are as follows:
+'           1. The highest partial concentration of an 
+'              ice type present in the egg is the 
+'              predominant ice type.
+'           2. If 2 concentrations are the same, then 
+'              the thickest ice type is the predominant.
+'           3. If 4/10 or greater of total old ice 
+'              (7.,8.,9.) is present in an egg, then 
+'              the predominant ice type is old ice and 
+'              if 2 stages of old ice were summed, then 
+'              the predominant stage is assigned "7." 
+'              for old ice.  However, if only one stage
+'              of old ice is predominant, it's code is 
+'              maintained as the predominant type.
+'           4. Fast ice is coded as F with a numeric 
+'              value of 17 in order to facilitate it's 
+'              differentiation from other ice types.  
+'           5. If 3 ice types are reported, and they are
+'              all the same, then the predominant is the
+'              sb category, since it best represents the
+'              (average) the egg as a whole.
+'		         6. An additional rule found in the CIS QA 
+'              colour code is that if an icetype of 6 
+'              (first year) or greater is present, and 
+'              new ice is the predominant ice type, then
+'              the ice type of 6 or greater becomes the 
+'              predominant ice type.  This rule has been 
+'              omitted in the context of this climatological
+'              scheme.
+'
+'Files Required: none
+'
+'Scripts Required: none
+'
+'Global Variables: none
+'
+'Original Author: Steve McCourt (CIS)
+'
+'Original Script Date: 30-NOV-1999
+'
+'Objects Received: the FTAB object theFTab
+'
+'Objects Returned: nothing
+'                                       
+'Modifications/Date/Author: 26-FEB-2003, Steve McCourt
+'                             -updated and streamlined (well..
+'                               maybe not....)
+'                           21-JUL-2010, Steve McCourt
+'                             -brash ice was set to go to
+'                              unknown stage of development
+'                              which caused problems, going
+'                              to make it thin first-year
+'                              (confirmed by CD, DD, LH)
+'                           01-DEC-2010, Steve McCourt
+'                             -updating to use any type info
+'                              found in the EGG_ATTR column
+'                              for fast ice, will revert to 
+'                              FI (code 17) if no info
+'==========================================================
+
+theFTab = Self.Get(0)
+theFTab.SetEditable(true)
+
+'==========================================================
+'create the required fields
+'==========================================================
+
+fldList = {}
+if(theFTab.FindField("P_stage") = nil) then
+  fldList.Add(Field.Make("P_stage", #FIELD_CHAR, 4,4))
+end
+if(theFTab.FindField("N_pstage") = nil) then
+  fldList.Add(Field.Make("N_pstage", #FIELD_SHORT, 4,4))
+end
+
+if(fldList.IsEmpty.Not) then
+  theFTab.AddFields(fldList)
+end
+
+pnttypeFld = theFTab.FindField("Pnt_type")
+eggattrFld = theFTab.FindField("Egg_attr")
+ctFld = theFTab.FindField("E_ct")
+caFld = theFTab.FindField("E_ca")
+cbFld = theFTab.FindField("E_cb")
+ccFld = theFTab.FindField("E_cc")
+saFld = theFTab.FindField("E_sa")
+sbFld = theFTab.FindField("E_sb")
+scFld = theFTab.FindField("E_sc")
+sdFld = theFTab.FindField("E_sd")
+npstageFld = theFTab.FindField("N_pstage")
+pstageFld = theFTab.FindField("P_stage")
+
+for each rec in theFTab  
+  pnttypeVal = theFTab.ReturnValue(pnttypeFld, rec)
+  eggattrVal = (theFTab.ReturnValue(eggattrFld, rec)).Trim
+  ctVal = (theFTab.ReturnValue(ctFld, rec)).Trim
+  caVal = (theFTab.ReturnValue(caFld, rec)).Trim
+  cbVal = (theFTab.ReturnValue(cbFld, rec)).Trim
+  ccVal = (theFTab.ReturnValue(ccFld, rec)).Trim
+  saVal = (theFTab.ReturnValue(saFld, rec)).Trim
+  sbVal = (theFTab.ReturnValue(sbFld, rec)).Trim
+  scVal = (theFTab.ReturnValue(scFld, rec)).Trim
+  sdVal = (theFTab.ReturnValue(sdFld, rec)).Trim
+
+  npstageVal = 0
+  pstageVal = ""
+
+  '========================================================
+  'we can't trust that Cd is filled in so calculate a
+  'value for it
+  '========================================================
+  
+  caNum = 0
+  cbNum = 0
+  ccNum = 0
+  cdNum = 0
+  
+  cdVal = 10
+  
+  if(caVal.Trim.IsNull) then
+    if(ctVal.Trim = "9+") then
+      caNum = 10
+      cdVal = cdVal - caNum
+    else
+      caNum = ctVal.AsNumber.SetFormat("d")
+      cdVal = cdVal - caNum
+    end
+  end
+  if(cbVal.Trim.IsNull.Not) then
+    cbNum = cbVal.AsNumber.SetFormat("d")
+    cdVal = cdVal - cbNum
+  end
+  if(ccVal.Trim.IsNull.Not) then
+    ccNum = ccVal.AsNumber.SetFormat("d")
+    cdVal = cdVal - ccNum
+  end
+  
+  cdVal = (cdVal.SetFormat("d")).AsString
+  'cdNum = cdVal.AsNumber.SetFormat("d")
+
+  '========================================================
+  'fast ice (pnt_type 106) gets assigned concentration of 10
+  'and stage of development of first year ice or 6
+  '
+  '***NEW***
+  'if EGG_ATTR is not null, pull the ice type from it  
+  '***NEW***
+  '========================================================
+
+  if(pnttypeVal = 106) then 
+    pstageVal = "FI"
+    if(eggattrVal.IsNull.Not) then
+      eggattrList = eggattrVal.AsTokens("_")
+      
+      'now pull index 6 (Sa)      
+      if(eggattrList.Get(6) <> "@") then
+        pstageVal = eggattrList.Get(6)
+      end 'not @
+    end 'eggattrVal not null
+
+  '========================================================
+  'no data and land get assigned 900 and 123 respectively
+  '========================================================
+
+  elseif((pnttypeVal = 123) or (pnttypeVal = 128) or 
+         (pnttypeVal = 133)) then
+    pstageVal = "ND"
+
+  '========================================================
+  'land
+  '========================================================
+  
+  elseif((pnttypeVal = 900) or (pnttypeVal = 400)) then
+    pstageVal = "LD"
+    
+  '========================================================
+  'icefree/openwater/bergywater
+  '========================================================
+  
+  elseif((pnttypeVal = 101) or (pnttypeVal = 107) or 
+     (pnttypeVal = 115)) then
+    pstageVal = "NI"
+
+  '========================================================
+  'ice (eggs)
+  '========================================================
+
+  else
+  
+  '========================================================
+    '1 icetype
+  '========================================================
+  
+    if(caVal.Trim.IsNull) then
+      caVal = ctVal
+    end 
+  
+    if(caVal = "9+") then
+      caNum = 10
+    else
+      caNum = caVal.AsNumber.SetFormat("d")
+    end
+    
+    if(cbVal.IsNull) then
+      cbNum = 0
+    else 
+      cbNum = cbVal.AsNumber.SetFormat("d")
+    end
+    if(ccVal.IsNull) then
+      ccNum = 0
+    else
+      ccNum = ccVal.AsNumber.SetFormat("d")
+    end
+
+    '======================================================
+    '3 icetypes, pick the middle icetype
+    '======================================================
+    
+    if((caNum = cbNum) and (caNum = ccNum)) then
+      pstageVal = sbVal
+
+    '======================================================
+    'choose predominance from column a to column d
+    '======================================================
+      
+    elseif((caNum >= cbNum) and (caNum >= ccNum) and 
+           (caNum >= cdNum)) then
+      pstageVal = saVal
+    elseif((cbNum > caNum) and (cbNum >= ccNum) and 
+           (cbNum >= cdNum)) then
+      pstageVal = sbVal
+    elseif((ccNum > caNum) and (ccNum > cbNum) and 
+           (ccNum >= cdNum)) then
+      pstageVal = scVal
+    elseif((cdNum > caNum) and (cdNum > cbNum) and 
+           (cdNum > ccNum)) then
+      pstageVal = sdVal
+    end  
+        
+    '======================================================
+    'now verify old ice predominance
+    '======================================================
+    
+    oipredom = False
+    sypredom = False
+    mypredom = False    
+    oi = 0
+    
+    '======================================================
+    'check column a
+    '======================================================
+
+    if(saVal = "7.") then
+      oi = oi + caNum
+      if(caNum >= 4) then
+        oipredom = True
+      end
+    elseif(saVal = "8.") then 
+      oi = oi + caNum
+      if(caNum >= 4) then
+        sypredom = True
+      end  
+    elseif(saVal = "9.") then
+      oi = oi + caNum
+      if(caNum >= 4) then
+        mypredom = True
+      end
+    end
+
+    '======================================================
+    'check column b
+    '======================================================
+
+    if(sbVal = "7.") then
+      oi = oi + cbNum
+      if(cbNum >= 4) then
+        oipredom = True
+      end
+    elseif(sbVal = "8.") then 
+      oi = oi + cbNum
+      if(cbNum >= 4) then
+        sypredom = True
+      end  
+    elseif(sbVal = "9.") then
+      oi = oi + cbNum
+      if(cbNum >= 4) then
+        mypredom = True
+      end
+    end  
+
+    '======================================================
+    'check column c
+    '======================================================
+
+    if(scVal = "7.") then
+      oi = oi + ccNum
+      if(ccNum >= 4) then
+        oipredom = True
+      end
+    elseif(scVal = "8.") then 
+      oi = oi + ccNum
+      if(ccNum >= 4) then
+        sypredom = True
+      end  
+    elseif(scVal = "9.") then
+      oi = oi + ccNum
+      if(ccNum >= 4) then
+        mypredom = True
+      end
+    end  
+
+    '======================================================
+    'check what should be predominant and we'll order
+    'this MY to SY to OLD to give preference to oldice
+    'subcategories
+    '======================================================
+
+    if(oi >= 4) then
+      pstageVal = "7."
+    elseif(oipredom) then
+      pstageVal = "7."
+    elseif(sypredom) then
+      pstageVal = "8."
+    elseif(mypredom) then
+      pstageVal = "9."
+    end
+  end
+
+  '========================================================
+  'now assign a numeric value to the predominant stage
+  '========================================================
+  
+  if(pstageVal = "FI") then
+    npstageVal = 17
+  elseif(pstageVal = "ND") then
+    npstageVal = 123
+  elseif(pstageVal = "LD") then
+    npstageVal = 900
+  elseif(pstageVal = "NI") then
+    npstageVal = 0
+  elseif((pstageVal = "?") or (pstageVal = "X")) then
+    npstageVal = 16
+  elseif(pstageVal = "B") then
+    npstageVal = 7
+  elseif((pstageVal = "L.") or (pstageVal = "L")) then
+    npstageVal = 15
+  elseif(pstageVal = "9.") then
+    npstageVal = 14
+  elseif(pstageVal = "8.") then
+    npstageVal = 13
+  elseif(pstageVal = "7.") then
+    npstageVal = 12
+  elseif(pstageVal = "4.") then
+    npstageVal = 11
+  elseif(pstageVal = "1.") then
+    npstageVal = 10
+  else
+    npstageVal = pstageVal.AsNumber.SetFormat("d")
+  end
+  
+  theFTab.SetValue(npstageFld, rec, npstageVal)
+  theFTab.SetValue(pstageFld, rec, pstageVal)
+end    
+
+saveEdits = true
+theFTab.SetEditable(false)
+theFTab.Deactivate

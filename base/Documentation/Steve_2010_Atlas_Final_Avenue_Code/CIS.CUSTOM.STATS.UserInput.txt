@@ -1,0 +1,434 @@
+'==========================================================
+'Script Name: CIS.CUSTOM.STATS.UserInput
+'
+'Purpose: Grabs user input for generating custom climate 
+'         product grids.  This is a simplified version of
+'         the original CIS.STATS.UserInput which omits the
+'         startYear and endYear and asks for specific years
+'         instead.
+'         
+'Files Required: _cisDBDir\hist_date_lut.dbf
+'                _cisDBDir\climate_products_lut.dbf
+'
+'Scripts Required: None
+'
+'Global Variables: _cisDBDir
+'                  _cisTmpDir
+'
+'Original Author: Steve McCourt (CIS)
+'
+'Original Script Date: 24-AUG-2003
+'
+'Objects Received: None
+'
+'Objects Returned: 
+'                                       
+'Modifications/Date/Author: 03-SEP-2003, Steve McCourt
+'                             -added "Do want to save source
+'                              grids (WA/EA/HB) for the 
+'                              Arctic separately?"
+'                           17-JUN-2010, Steve McCourt
+'                             -added "Do you want to convert
+'                              fast ice to real ice types?"
+'                           21-JUL-2010, Steve McCourt
+'                             -added choice for dealing with 
+'                              first year ice if number of
+'                              input ratio code charts is
+'                              less than 7% (2 of 30)
+'==========================================================
+
+maxNumOfHistDates = Self.Get(0)
+
+'==========================================================
+'have the user choose a source region
+'==========================================================
+
+regionList = {"Arctic (WA/EA/HB)", "Western Arctic", 
+              "Eastern Arctic", "Hudson Bay", "Eastern Coast",
+              "Great Lakes"}
+              
+theRegion = msgBox.ChoiceAsString(regionList, 
+  "Choose region to analyse:", "Climate Products")
+  
+if(theRegion = nil) then
+  exit
+end
+  
+if(theRegion = "Arctic (WA/EA/HB)") then
+  theRegion = "AR"
+elseif(theRegion = "Western Arctic") then
+  theRegion = "WA"
+elseif(theRegion = "Eastern Arctic") then
+  theRegion = "EA"
+elseif(theRegion = "Hudson Bay") then
+  theRegion = "HB"
+elseif(theRegion = "Eastern Coast") then
+  theRegion = "EC"
+elseif(theRegion = "Great Lakes") then
+  theRegion = "GL"
+end
+
+'==========================================================
+'START Sep 03, 2003, Steve McCourt
+'==========================================================
+
+saveArcticSourceGrids = False
+
+if(theRegion = "AR") then
+  saveArcticSourceGrids = msgBox.YesNo("Do you want to save"++
+    "source grids (WA/EA/HB) for the Arctic separately (if"++
+    """No"" then source grids will be deleted)?", 
+    "Save Source Grids", True)
+end
+
+'==========================================================
+'END Sep 03, 2003, Steve McCourt
+'==========================================================
+
+'==========================================================
+'have the user choose the statistics to process
+'==========================================================
+
+vtabFN = FileName.Make(_cisDBDir+"\climate_products_lut.dbf")
+theVTab = VTab.Make(vtabFN, False, False)
+
+theBitmap = theVTab.GetSelection
+
+if(theRegion = "GL") then
+  statType = "lake"
+else
+  statType = "sea"
+end
+
+qryStr = "(([Stat_type] = "+statType.Quote+") or "+
+          "([Stat_type] = ""all""))"
+          
+theVTab.Query(qryStr, theBitmap, #VTAB_SELTYPE_NEW)
+
+statidFld = theVTab.FindField("Stat_id")
+stattypeFld = theVTab.FindField("Stat_type")
+engline1Fld = theVTab.FindField("Eng_title1")
+engline2Fld = theVTab.FindField("Eng_title2")
+
+productDict = Dictionary.Make(theBitmap.Count)
+for each bit in theBitmap
+  theKey = theVTab.ReturnValue(statidFld, bit)
+
+  '========================================================
+  'don't offer the departure product here
+  '========================================================
+  
+  if(theKey.UCase = "DEPRT") then
+    continue
+  end
+  
+  theVal = theVTab.ReturnValue(engline1Fld, bit)
+  theVal = theVal++theVTab.ReturnValue(engline2Fld, bit)
+
+  '========================================================
+  'let's cleanup a bit so product names can be seen
+  '========================================================
+  
+  if(theVal.LCase.Contains("frequency")) then
+    theVal = theVal.LCase.Substitute("frequency", "frq.")
+  end
+  if(theVal.LCase.Contains("median")) then
+    theVal = theVal.LCase.Substitute("median", "med.")
+  end
+
+  '========================================================
+  'cleanup any sea ice/lake ice issues
+  '========================================================
+  
+  if(theRegion = "GL") then
+    if(theVal.LCase.Contains("sea ice")) then
+      theVal = theVal.LCase.Substitute("sea ice", "lake ice")
+    end
+  end
+  
+  theVal = theVal.Proper
+  productDict.Add(theKey, theVal)
+end
+
+theVTab.Deactivate
+theVTab = nil
+
+fullproductList = {}
+
+for each prodid in productDict.ReturnKeys
+  theVal = productDict.Get(prodid)
+  fullproductList.Add(theVal)
+end
+
+productList = {}
+
+fullproductList = msgBox.MultiListAsString(fullproductList, 
+  "Choose all the products to process:", "Climate Products")
+  
+if((fullproductList = nil) or (fullproductList.Count = 0)) then
+  msgBox.Info("You didn't select anything!  Exiting.", "Whoops!")
+  exit
+end
+
+for each prodid in productDict.ReturnKeys
+  theVal = productDict.Get(prodid)
+  if(fullproductList.FindByValue(theVal) >= 0) then
+    productList.Add(prodid.UCase)
+  end
+end
+
+productDict = nil
+
+'==========================================================
+'fast ice re-encoding
+'==========================================================
+
+recodeFastIce = False
+for each prodid in productList
+  if(prodid = "PRMED") then
+    recodeFastIce = MsgBox.YesNo("Do you wish to convert"++
+      "fast ice to ice types for the predominant ice type"++
+      "product?"+NL+NL+
+      "Ice types were determined by an ice forecaster and"++
+      "represent typical thicknesses for each date.",
+      "Re-code Fast Ice", False)
+  end
+end
+
+  
+'==========================================================
+'have the user choose the historic dates
+'==========================================================
+
+vtabFN = FileName.Make(_cisDBDir+"\hist_date_lut.dbf")
+theVTab = VTab.Make(vtabFN, False, False)
+
+'==========================================================
+'if AR, then limit to HB because it started later than
+'EA or WA
+'==========================================================
+
+if(theRegion = "AR") then
+  fldName = "Hb_startyr"
+else
+  fldName = theRegion+"_startyr"
+end
+
+'==========================================================
+'let the user choose the historic dates to process
+'==========================================================
+
+histdateFld = theVTab.FindField("Hist_date")
+theFld = theVTab.FindField(fldName.Proper)
+qryStr = "(["+fldName+"] > 0)"
+
+theBitmap = theVTab.GetSelection
+theVTab.Query(qryStr, theBitmap, #VTAB_SELTYPE_NEW)
+
+histDates = {}
+
+if((theRegion = "EC") or (theRegion = "GL")) then
+
+  '========================================================  
+  'we need to re-sort the historic dates to appear
+  'logical i.e. Nov/Dec to May/Jul so skip anything
+  'less than record 40 (Oct 01)
+  '========================================================
+  
+  for each r in theBitmap
+    if(r < 40) then
+      continue
+    else      
+      theVal = theVTab.ReturnValue(histdateFld, r)
+      histDates.Add(theVal)
+      startYear = theVTab.ReturnValue(theVtab.FindField(fldName), r)
+    end
+  end
+  for each r in theBitmap
+    if(r < 40) then
+      theVal = theVTab.ReturnValue(histdateFld, r)
+      histDates.Add(theVal)
+    else
+      continue
+    end
+  end
+else
+  for each r in theBitmap
+    theVal = theVTab.ReturnValue(histdateFld, r)
+    histDates.Add(theVal)
+    startYear = theVTab.ReturnValue(theVtab.FindField(fldName), r)    
+  end
+end
+
+theVTab.Deactivate
+theVTab = nil
+
+userHistDates = {}
+i = 1
+
+while (i <= maxNumOfHistDates)
+  histDate = msgBox.ChoiceAsString(histDates, 
+    "Choose historic date number"++
+    i.AsString, "Choose Historic Dates To Process")
+
+  '========================================================  
+  'now remove the chosen historic date from the list
+  '========================================================
+  
+  if(histDate = nil) then
+    exit
+  end
+  
+  userHistDates.Add(histDate)
+  theIndex = histDates.FindByValue(histDate)
+  histDates.Remove(theIndex)
+    
+  i = i + 1
+end
+
+'==========================================================
+'choose any number of years to process
+'==========================================================
+
+currentDate = Date.Now
+endYear = currentDate.GetYear
+
+if((theRegion = "EC") or (theRegion = "GL")) then
+  if(currentDate.GetMonthOfYear > 9) then
+    endYear = endYear + 1
+  end
+end   
+
+'==========================================================
+'provide a list of ice seasons displayed as yyyy/yy (EC/GL)
+'==========================================================
+
+yearList = {}
+yearStrList = {}
+yearDict = Dictionary.Make(endYear - StartYear + 1)
+
+for each i in startYear..endYear
+  if((theRegion = "EC") or (theRegion = "GL")) then
+    yearStr = (i - 1).AsString+"/"+i.AsString.Right(2)
+  else
+    yearStr = i.AsString
+  end
+  yearDict.Add(yearStr, i)
+  yearStrList.Add(yearStr)
+end
+              
+'==========================================================
+'we only have room to report 16 years on the output maps
+'so caution the user first
+'==========================================================
+
+yearStrList = msgBox.MultiListAsString(yearStrList, "Choose the"++
+  "years to include in your statistics (max of 16 please):",
+  "Choose Years")
+
+if(yearStrList = nil) then
+  exit
+end
+  
+
+for each aYearStr in yearStrList
+  yearList.Add(yearDict.Get(aYearStr))
+end
+
+if(yearList.Count = 0) then
+  msgbox.Error("You did not select any years! Exiting.", "Oops!")
+  exit
+elseif(yearList.Count > 16) then
+  msgbox.Error("The max number of years for custom products"++
+    "is 16. Exiting.", "Oops!")
+  exit 
+end
+
+yearStrList = nil
+yearDict = nil
+
+'==========================================================
+'first year code 6 re-encoding
+'  -we can apply a rule such that if less than 7% (2 of 30)
+'   years were ratio code years, then we can safely re-code
+'   generic first year ice to the user's choice
+'  -note that if all source charts are ratio, we dont ask,
+'   we just patch automatically (the -1 below)
+'==========================================================
+
+patchRatioCodeIceTypes = -1
+numYearsRatioCode = 0
+totYears = yearList.Count
+for each prodid in productList
+  if(prodid = "PRMED") then
+    for each ayear in yearList
+      if(ayear < 1983) then
+        numYearsRatioCode = numYearsRatioCode + 1
+      end 
+    end
+    percentYears = numYearsRatioCode / totYears
+    if((percentYears < 0.07) and (percentYears > 0)) then  
+      if(theRegion = "GL") then
+        icetypeList = {"Thick lake ice (7)", "Very thick lake ice (1.)"}
+        theMsg = "We detected that less than 7% of the input charts"++
+          "contain ratio code information. Choose how you would"++
+          "like to encode very thick lake ice"
+      else      
+        iceTypeList = {"First-year (6)", "Thin first-year (7)", 
+                       "Medium first-year (1.)", "Thick first-year (4.)"}
+        theMsg = "We detected that less than 7% of the input charts"++
+          "contain ratio code information. Choose how you would"++
+          "like to encode generic first-year ice (code 6)"
+      end
+                    
+      patchRatioCodeIceTypes = msgBox.ChoiceAsString(iceTypeList, 
+        theMsg, "Ratio Code Ice Types")
+        
+      if(patchRatioCodeIceTypes = nil) then
+        exit
+      elseif(patchRatioCodeIceTypes = "First-year (6)") then
+        patchRatioCodeIceTypes = 6
+      elseif(patchRatioCodeIceTypes = "Thin first-year (7)") then
+        patchRatioCodeIceTypes = 7
+      elseif(patchRatioCodeIceTypes = "Medium first-year (1.)") then
+        patchRatioCodeIceTypes = 10
+      elseif(patchRatioCodeIceTypes = "Thick first-year (4.)") then
+        patchRatioCodeIceTypes = 11
+      elseif(patchRatioCodeIceTypes = "First-year (6)") then
+        patchRatioCodeIceTypes = 6
+      elseif(patchRatioCodeIceTypes = "Thick lake ice (7)") then
+        patchRatioCodeIceTypes = 7
+      elseif(patchRatioCodeIceTypes = "Very thick lake ice (1.)") then
+        patchRatioCodeIceTypes = 10
+      end
+    end
+  end
+end
+
+cellSizes = {"1000", "5000", "10000"}
+
+cellSize = msgBox.ChoiceAsString(cellSizes, "Enter the cellsize (m)"++
+  "for your analysis (1000 is recommended):", "Enter Cellsize")
+  
+if(cellSize = nil) then
+  exit
+else
+  cellSize = cellSize.AsNumber
+end
+
+'==========================================================
+'now the output directory for grids
+'==========================================================
+
+outDir = "a"
+while (outDir.AsFileName.IsDir.Not)
+  outDir = msgBox.Input("Enter out directory for grids:",
+    "Output Directory", _cisTmpDir)
+  if(outDir = nil) then
+    exit
+  end
+end
+
+return {theRegion, productList, userHistDates, yearlist, 
+  cellSize, outDir, saveArcticSourceGrids, recodeFastIce, patchRatioCodeIceTypes}
+

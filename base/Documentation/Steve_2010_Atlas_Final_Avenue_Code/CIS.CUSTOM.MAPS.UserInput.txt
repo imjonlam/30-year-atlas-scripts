@@ -1,0 +1,302 @@
+'==========================================================
+'Script Name: CIS.MAPS.UserInput
+'
+'Purpose: Grabs user input for generating climate product
+'         grids.
+'         
+'Files Required: _cisDBDir\hist_date_lut.dbf
+'                _cisDBDir\climate_products_lut.dbf
+'
+'Scripts Required: None
+'
+'Global Variables: _cisDBDir
+'                  _cisTmpDir
+'
+'Original Author: Steve McCourt (CIS)
+'
+'Original Script Date: 24-AUG-2003
+'
+'Objects Received: None
+'
+'Objects Returned: 
+'                                       
+'Modifications/Date/Author: 25-APR-2005, Steve McCourt
+'                             -ensured that only the Atlas
+'                              extent is offered for if the
+'                              Arctic region is selected
+'                           07-MAY-2010, Steve McCourt
+'                             -added a new product for
+'                              median concentration when ice
+'                              is present
+'                             -for lack of a logical name,
+'                              they are called cpmed
+'                              (conc when ice present median) lol
+'                           08-JUL-2010, Steve McCourt
+'                             -added PNG output
+'                             -added 200dpi resolution
+'==========================================================
+
+'==========================================================
+'have the user choose a source region
+'==========================================================
+
+theList = {"Arctic (WA/EA/HB)", "Western Arctic", 
+              "Eastern Arctic", "Hudson Bay", "Eastern Coast",
+              "Great Lakes"}
+              
+theRegion = msgBox.ChoiceAsString(theList, 
+  "Choose region to analyse:", "Climate Products")
+
+if(theRegion = nil) then
+  exit
+end
+  
+if(theRegion = "Arctic (WA/EA/HB)") then
+  theRegion = "AR"
+elseif(theRegion = "Western Arctic") then
+  theRegion = "WA"
+elseif(theRegion = "Eastern Arctic") then
+  theRegion = "EA"
+elseif(theRegion = "Hudson Bay") then
+  theRegion = "HB"
+elseif(theRegion = "Eastern Coast") then
+  theRegion = "EC"
+elseif(theRegion = "Great Lakes") then
+  theRegion = "GL"
+end
+
+'==========================================================
+'ask if they would like to use the Arctic grids as the
+'source data for EA/WA/HB
+'========================================================== 
+
+if((theRegion = "WA") or (theRegion = "EA") or (theRegion = "HB")) then
+  useArcticSourceGrids = msgBox.YesNo("Do you want to use"++
+    "the Arctic source grids for your data?", "Source Region",
+    True)
+else
+  useArcticSourceGrids = False
+end
+
+'==========================================================
+'have the user choose the output format
+'==========================================================  
+
+theList = {"GIF", "JPG", "PNG", "PS", "Send to a printer (2 min/page)"}
+outFormat = msgBox.ChoiceAsString(theList, "Choose an output"++
+  "for your maps:", "Output Format")
+
+'==========================================================
+'if applicable, have the user choose the output resolution
+'for JPG/GIF (I tried to do this for PS, but can't)
+'========================================================== 
+
+outResolution = 0
+if(outFormat = nil) then
+  exit
+elseif(outFormat = "Send to a printer (2 min/page)") then
+  outFormat = "PRINT"
+elseif((outFormat = "GIF") or (outFormat = "JPG")) then
+  theList = {300, 200, 150, 96}
+  outResolution = msgBox.ChoiceAsString(theList, "Choose"++
+    "the output resolution:", "Output Resolution")
+  if(outResolution = nil) then
+    exit
+  end
+end
+
+'==========================================================
+'have the user choose the statistics to process
+'==========================================================
+
+vtabFN = FileName.Make(_cisDBDir+"\climate_products_lut.dbf")
+theVTab = VTab.Make(vtabFN, False, False)
+
+theBitmap = theVTab.GetSelection
+
+if(theRegion = "GL") then
+  statType = "lake"
+else
+  statType = "sea"
+end
+
+qryStr = "(([Stat_type] = "+statType.Quote+") or "+
+          "([Stat_type] = ""all""))"
+          
+theVTab.Query(qryStr, theBitmap, #VTAB_SELTYPE_NEW)
+
+statidFld = theVTab.FindField("Stat_id")
+stattypeFld = theVTab.FindField("Stat_type")
+engline1Fld = theVTab.FindField("Eng_title1")
+engline2Fld = theVTab.FindField("Eng_title2")
+
+productDict = Dictionary.Make(theBitmap.Count)
+for each bit in theBitmap
+  theKey = theVTab.ReturnValue(statidFld, bit)
+
+  '========================================================
+  'don't offer the departure product here
+  '========================================================
+  
+  if(theKey.UCase = "DEPRT") then
+    continue
+  end
+  
+  theVal = theVTab.ReturnValue(engline1Fld, bit)
+  theVal = theVal++theVTab.ReturnValue(engline2Fld, bit)
+
+  '========================================================
+  'let's cleanup a bit so product names can be seen
+  '========================================================
+  
+  if(theVal.LCase.Contains("frequency")) then
+    theVal = theVal.LCase.Substitute("frequency", "frq.")
+  end
+  if(theVal.LCase.Contains("median")) then
+    theVal = theVal.LCase.Substitute("median", "med.")
+  end
+
+  '========================================================
+  'cleanup any sea ice/lake ice issues
+  '========================================================
+  
+  if(theRegion = "GL") then
+    if(theVal.LCase.Contains("sea ice")) then
+      theVal = theVal.LCase.Substitute("sea ice", "lake ice")
+    end
+  end
+  
+  theVal = theVal.Proper
+  productDict.Add(theKey, theVal)
+end
+
+theVTab.Deactivate
+theVTab = nil
+
+fullproductList = {}
+
+for each prodid in productDict.ReturnKeys
+  theVal = productDict.Get(prodid)
+  fullproductList.Add(theVal)
+end
+
+'==========================================================
+'have the user choose the products to print
+'==========================================================
+
+productList = {}
+
+fullproductList = msgBox.MultiListAsString(fullproductList, 
+  "Choose all the products to process:", "Climate Products")
+  
+if((fullproductList = nil) or (fullproductList.Count = 0)) then
+  msgBox.Info("You didn't select anything!  Exiting.", "Whoops!")
+  exit
+end
+
+for each prodid in productDict.ReturnKeys
+  theVal = productDict.Get(prodid)
+  if(fullproductList.FindByValue(theVal) >= 0) then
+    productList.Add(prodid.UCase)
+  end
+end
+
+productDict = nil
+
+'==========================================================
+'now the input directory for source grids
+'==========================================================
+
+gridDir = "a"
+while (gridDir.AsFileName.IsDir.Not)
+  gridDir = msgBox.Input("Enter directory where climate"++
+    "product source data (GRIDs) are found:", "Source Grid Directory",
+      _cisTmpDir)
+  if(gridDir = nil) then
+    exit
+  end
+end
+  
+'==========================================================
+'now start and end years (remember to add 1 to the year
+'if we're in GL or EC)
+'==========================================================
+
+currentDate = Date.Now
+
+if(theRegion = "GL") then
+  startYear = 1973
+elseif(theRegion = "EC") then
+  startYear = 1969
+elseif((theRegion = "AR") or (theRegion = "HB")) then
+  startYear = 1971
+elseif(useArcticSourceGrids) then
+  startYear = 1971
+else
+  startYear = 1968
+end
+
+endYear = currentDate.GetYear
+
+if((theRegion = "EC") or (theRegion = "GL")) then
+  if(currentDate.GetMonthOfYear > 9) then
+    endYear = endYear + 1
+  end
+end   
+
+'==========================================================
+'provide a list of ice seasons for the user to select
+'(remember that EC/GL are returned as yyyy/yy
+'==========================================================
+
+yearList = {}
+yearStrList = {}
+yearDict = Dictionary.Make(endYear - StartYear + 1)
+
+for each i in startYear..endYear
+  if((theRegion = "EC") or (theRegion = "GL")) then
+    yearStr = (i - 1).AsString+"/"+i.AsString.Right(2)
+  else
+    yearStr = i.AsString
+  end
+  yearDict.Add(yearStr, i)
+  yearStrList.Add(yearStr)
+end
+              
+'==========================================================
+'we only have room to report 16 years on the output maps
+'so caution the user first
+'==========================================================
+
+yearStrList = msgBox.MultiListAsString(yearStrList, "Choose the"++
+  "years used to compute your statistics (max of 16 please):",
+  "Choose Years")
+
+if(yearStrList = nil) then
+  exit
+end
+
+for each aYearStr in yearStrList
+  yearList.Add(yearDict.Get(aYearStr))
+end
+
+'==========================================================
+'now the output directory for maps (if printing, just set
+'it to the temporary directory for use in re-projecting etc.
+'==========================================================
+
+if(outFormat = "PRINT") then
+  outDir = _cisTmpDir
+else
+  outDir = "a"
+  while (outDir.AsFileName.IsDir.Not)
+    outDir = msgBox.Input("Enter out directory for files:",
+      "Output Directory", _cisTmpDir)
+    if(outDir = nil) then
+      exit
+    end
+  end
+end
+
+return {theRegion, useArcticSourceGrids, outFormat, 
+  outResolution, productList, gridDir, yearList, yearStrList, outDir}

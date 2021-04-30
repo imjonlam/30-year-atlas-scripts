@@ -1,0 +1,71 @@
+'==========================================================
+'Script Name: CIS.ALL.ImportCov
+'
+'Purpose: Imports a coverage from an e00 file.
+'
+'Files Required: None
+'
+'Scripts Required: None
+'
+'Global Variables: None
+'
+'Original Author: Steve McCourt (CIS)
+'
+'Original Script Date: 19-OCT-2001
+'
+'Objects Received: the STRING object inFileName
+'                  the STRING object theOutputDir
+'
+'Objects Returned: the STRING object covStr
+'                                       
+'Modifications/Date/Author: 19-JUL-2010, Steve McCourt
+'                             -in some instances, we may want
+'                              to specify an output cover name
+'                              this now permits it and will not
+'                              break any previous code that 
+'                              is unaware of this
+'==========================================================
+
+if(Self.Count = 2) then
+  inFileName = Self.Get(0)
+  theOutputDir = Self.Get(1)
+  if(inFileName.Is(FileName).Not) then
+    inFileName = inFileName.AsFileName
+  end
+  
+  infileBase = inFileName.GetBaseName
+  infileBase = InFileBase.Substitute(".e00", "")
+  infileBase = InFileBase.Substitute(".", "_")  
+  
+  if((theOutputDir.Right(1) <> "\") or (theOutputDir.Right(1) <> "/")) then
+    covStr = theOutputDir+"\"+infileBase
+  else
+    covStr = theOutputDir+infileBase
+  end
+else
+  inFileName = Self.Get(0)
+  theOutputDir = Self.Get(1)
+  covStr = (Self.Get(2)).Trim
+  if(covStr.Count > 13) then
+    return nil
+  end
+  
+  if((theOutputDir.Right(1) <> "\") or (theOutputDir.Right(1) <> "/")) then
+    covStr = theOutputDir+"\"+covStr
+  else
+    covStr = theOutputDir+covStr
+  end
+  
+  if(inFileName.Is(FileName).Not) then
+    inFileName = inFileName.AsFileName
+  end  
+end
+
+binLoc = System.GetEnvVar("AVBIN")
+exePath = binLoc + "\import71"
+
+System.ExecuteSynchronous(exePath++inFileName.AsString++covStr+" /T")
+
+return covStr
+
+

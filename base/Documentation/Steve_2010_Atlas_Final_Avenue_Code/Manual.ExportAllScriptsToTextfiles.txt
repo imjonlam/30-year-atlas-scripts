@@ -1,0 +1,16 @@
+'exports all avenue script objects to text files
+
+for each aDoc in av.GetProject.GetDocs
+  if (aDoc.Is(SEd)) then
+    theScript = aDoc.GetScript
+    scriptSourceStr = theScript.AsString
+    scriptName = theScript.GetName
+    outFileName = FileName.Make("C:\mccourts\projects\atlases_2010\FINAL_avenue_code_for_reference\"+scriptName+".txt")
+    outLineFile = LineFile.Make(outFileName, #FILE_PERM_WRITE)
+    outLineFile.WriteElt(scriptSourceStr)
+    outLineFile.Close
+  end
+end
+    
+ 
+

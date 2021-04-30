@@ -1,0 +1,248 @@
+'*******CHECK HARDCODED RASTER LOCATIONS*****
+'     USING 1971-2000 RASTER PATH
+'  X  USING 1981-2010 PRELIMINARY RASTER PATH
+'==========================================================
+'Script Name: Manual.LinearInterpolateGrids.Main
+'
+'Purpose: Linearally interpolates a grid that is found between 
+'         two historic dates that a user chooses.
+'
+'         Reclass of concentrationa and frequency products is
+'         automatically built in to the algorithm. Experiments
+'         interpolating dates where we had real statistics
+'         aided in this effort.
+'
+'         Unfortunately, predominant ice types cannot be 
+'         automatically re-classed because the algorithm
+'         thins ice during breakup and thickens ice during
+'         freezeup (thickening may be appropriate but too
+'         difficult to integrate into code).
+'
+'         Concentration products (except median of old ice
+'         because concentrations and areas are fairly well 
+'         defined and it causes inconsistencies) will have 
+'         an automatic reclass of the following values:
+'           1/10 becomes 0 (open water)
+'           8/10 becomes 9/10
+'         
+'         Frequency products will have an automatic
+'         reclass of the following values:
+'           98%, 99% becomes 100%
+'            1%,  2% becomes 0%
+'
+'Files Required: _cisDBDir\hist_date_lut.dbf
+'                _cisDBDir\climate_products_lut.dbf
+'                _cisClimateGridsDir\*\*\* (grids)
+'
+'Scripts Required: Manual.LinearInterpolateGrids.UserInput
+'                  CIS.MAPS.LoadIceTheme
+'                  CIS.STATS.CleanClimateGrid
+'
+'Global Variables: _cisDBDir
+'                  _cisTmpDir
+'                  _cisClimateGridsDir
+'
+'Original Author: Steve McCourt (CIS)
+'
+'Original Script Date: 08-APR-2011
+'
+'Objects Received: the LIST object userParams
+'
+'Objects Returned: None
+'
+'Modifications/Date/Author: 
+'
+'==========================================================
+
+'==========================================================
+'this is worth some explanation - use the following as an example
+'  -if we want to interpolate 0604 using 0514 and 0618
+'    -historic dates: 0514, 0521, 0528, 0604, 0611, 0618
+'    -index:            0     1     2     3     4     5
+'
+'think of this as a mathematical formula
+'  x0 = 0 (first observed point aka y-intercept or startHistDate)
+'  x1 = 5 (second real / observed point (counting from 0) or 0618 
+'          in this example)
+'  y0 = grid values from startHistDate 
+'  y1 = grid values from endHistDate
+'
+'this value includes the start and the end values
+'  using the example, there are 6 possible dates 
+'
+'  totWeeks = 6
+'
+'this value is the nth point (i.e. the week) you want to interpolate 
+'(where the first week is considered week 0)
+'
+'  weekToInterpolate = 4
+'
+'compute the slope first
+'  x0 = 0
+'  x1 = 4
+'  y0 = inGrid1
+'  y1 = inGrid2
+'
+'  using m = (y1 - y0) / (x1 - x0)
+'
+'finally compute the interpolation using y = mx + b
+'==========================================================
+
+'==========================================================
+'to make things simpler, automatically overwrite any grids
+'==========================================================
+oldGridVerify = Grid.GetVerify
+Grid.SetVerify(#GRID_VERIFY_OFF)
+
+'==========================================================
+'have user choose some options and we will fill in the blanks
+'==========================================================
+userParams = av.Run("Manual.LinearInterpolateGrids.UserInput", {})
+
+if(userParams = nil) then
+  return nil
+end
+
+theRegion = userParams.Get(0)
+theStat = userParams.Get(1)
+startHistDate = userParams.Get(2)
+endHistDate = userParams.Get(3)
+histDateToInterpolate = userParams.Get(4)
+interpolationIndex = userParams.Get(5)
+interpolationTotPoints = userParams.Get(6)
+startYear = userParams.Get(7)
+endYear = userParams.Get(8)
+outDir = userParams.Get(9)
+
+'==========================================================
+'so... begin by creating the input grid objects
+'==========================================================
+if(theRegion = "AR") then
+  fullRegion = "arctic"
+elseif(theRegion = "EC") then
+  fullRegion = "east_coast"
+elseif(theRegion = "GL") then
+  fullRegion = "great_lakes"
+end
+
+inGridDir = "\\Netapp2\climate\Climate_Products\Preliminary_Arctic_Atlas_1981_2010\data"
+'******************************************************
+'*****USE THIS DIR WHEN ATLAS PRODUCTS ARE COMPLETE****
+'******************************************************
+'inGridDir = _cisClimateGridsDir+"\"+fullRegion+"\"+startYear.AsString+"_"+
+'  endYear.AsString+"\"+theStat.LCase
+'******************************************************
+
+'==========================================================
+'this is the x0 grid
+'==========================================================
+inGrid1 = Grid.Make(Grid.MakeSrcName(inGridDir+"\"+theRegion.LCase+"_"+theStat.LCase+startHistDate))
+
+'==========================================================
+'this is the x1 grid
+'==========================================================
+inGrid2 = Grid.Make(Grid.MakeSrcName(inGridDir+"\"+theRegion.LCase+"_"+theStat.LCase+endHistDate))
+
+'==========================================================
+'set the environment based on the first input grid
+'==========================================================
+Grid.SetAnalysisCellSize(#GRID_ENVTYPE_VALUE, inGrid1.GetCellsize)
+Grid.SetAnalysisExtent(#GRID_ENVTYPE_VALUE, inGrid1.GetExtent)
+
+'==========================================================
+'slope
+'==========================================================
+slopeGrid = ((inGrid2.Float - inGrid1.Float) / (interpolationTotPoints.AsGrid - 1.AsGrid)).Float
+
+'==========================================================
+'now compute the interpolated values using y = mx + b
+'==========================================================
+g01 = ((slopeGrid * interpolationIndex.AsGrid + inGrid1).Float).Int
+
+'==========================================================
+'now apply some safe tweaks
+'  -through careful diligence, we determined the following
+'   to be acceptable tweaks
+'     -concentration: VALUES 1     -> 0
+'                     VALUES 8     -> 9
+'     -frequecny:     VALUES 98,99 -> 100
+'                     VALUES 1,2   -> 0
+'  -BUT predominant cannot be tweaked because it grows
+'   or thins the ice and there's no safe way to tweak
+'  -this was based on an experimental interpolation where
+'   we had the real data to compare to 
+'==========================================================
+if((theStat.LCase = "ctmed") or
+   (theStat.LCase = "ctavg") or
+   (theStat.LCase = "cpmed")) then
+  g02 = (g01 <= 1.AsGrid).Con(0.AsGrid, g01)
+  g03 = (g02 = 8.AsGrid).Con(9.AsGrid, g02)
+  
+  'free up memory and objects for code below
+  g01 = nil
+  g02 = nil
+  g01 = g03
+  g03 = nil
+elseif(theStat.LCase.Contains("frq")) then
+  g02 = (g01 = 98.AsGrid).Con(100.AsGrid, g01)
+  g03 = (g02 = 99.AsGrid).Con(100.AsGrid, g02)
+  g04 = (g03 <= 2.AsGrid).Con(0.AsGrid, g03)
+  
+  'free up memory and objects for code below 
+  g01 = nil
+  g02 = nil
+  g03 = nil
+  g01 = g04
+  g04 = nil
+end 'theStat
+
+outFN = FileName.Make(outDir+"\"+theRegion.LCase+"_"+theStat.LCase+histDateToInterpolate)
+g01.SaveDataSet(outFN)
+
+'==========================================================
+'release memory...
+'==========================================================
+inGrid1 = nil
+inGrid2 = nil
+slopeGrid = nil
+g01 = nil
+
+'==========================================================
+'add meaningful attributes now for use with legends
+'  GOTCHA!!! (my bad)
+'    -if you only want attributes, this script won't re-write 
+'     the grid to another filename, it only acts on the input 
+'     so send it the same for tmpFN and outFN
+'==========================================================
+av.Run("CIS.STATS.CleanClimateGrid", {false, false, true, false, theRegion,
+  outFN, outFN, theStat})
+
+'==========================================================
+'finally add the grid to the view and set a legend for it too
+'==========================================================
+theView = av.FindDoc("Atlas View")
+theDocWin = theView.GetWin
+theDocWin.Open
+theDocWin.Activate
+
+if(theStat.LCase.Contains("frq")) then
+  iceProductString = "frequency"
+elseif(theStat.LCase = "prmed") then
+  iceProductString = "predominant"
+else
+  iceProductString = "concentration"
+end 
+
+av.Run("CIS.MAPS.LoadIceTheme", {theView, theRegion, "gtheme", 
+  outFN.AsString, iceProductString, false})
+
+'==========================================================
+'set Grid verification back to the old setting
+'==========================================================
+Grid.SetVerify(oldGridVerify)
+
+av.PurgeObjects
+
+msgBox.Info("Done linear interpolation!", "Done!")
+
+return nil
